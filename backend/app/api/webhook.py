@@ -1,13 +1,12 @@
-import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
-from app.models.user import User
 from app.core.config import settings
+from app.db import get_db
+from app.models import Expense, User
 from app.services.text_parser import parse_expense_text
 from app.services.whatsapp import whatsapp_service
 
@@ -16,23 +15,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/webhook")
-async def verify_webhook(
-    hub_mode: str,
-    hub_challenge: str,
-    hub_verify_token: str,
-):
-    if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_verify_token:
-        return int(hub_challenge)
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token")
+@router.get("/health")
+async def health() -> dict:
+    return {"status": "ok"}
 
 
 @router.post("/webhook")
 async def handle_webhook(
     request: Request,
     db: Session = Depends(get_db),
-    x_hub_signature_256: str | None = Header(None),
+    x_hub_signature_256: Optional[str] = Header(None),
 ):
+    """
+    WhatsApp webhook entry point.
+    - Optionally verify X-Hub-Signature-256 if provided.
+    - Dispatch text messages to the parser and store expenses.
+    """
     body_bytes = await request.body()
     if x_hub_signature_256 and not whatsapp_service.verify_signature(
         body_bytes, x_hub_signature_256
@@ -42,7 +40,7 @@ async def handle_webhook(
     payload = await request.json()
     logger.debug("Received webhook payload: %s", payload)
 
-    entries = payload.get("entry", [])
+    entries: List[Dict[str, Any]] = payload.get("entry", [])
     for entry in entries:
         for change in entry.get("changes", []):
             value = change.get("value", {})
@@ -54,11 +52,9 @@ async def handle_webhook(
     return {"status": "received"}
 
 
-async def _handle_message(db: Session, message: Dict[str, Any], contacts: list[Dict[str, Any]]):
+async def _handle_message(db: Session, message: Dict[str, Any], contacts: List[Dict[str, Any]]):
     msg_type = message.get("type")
-    wa_id = None
-    if contacts:
-        wa_id = contacts[0].get("wa_id")
+    wa_id = contacts[0].get("wa_id") if contacts else None
 
     if not wa_id:
         logger.warning("No wa_id found in message; skipping")
@@ -88,8 +84,31 @@ async def _handle_text_message(db: Session, user: User, message: Dict[str, Any])
     body = _extract_text_body(message)
     parsed = parse_expense_text(body)
 
+    if not parsed["amount"]:
+        logger.info("No amount found in message '%s'; skipping expense creation", body)
+        await whatsapp_service.send_text_message(
+            user.whatsapp_id,
+            "I couldn't find an amount in that message. Please include something like 'Lunch 12 USD'.",
+        )
+        return
+
+    expense = Expense(
+        user_id=user.id,
+        amount=parsed["amount"],
+        currency=parsed["currency"],
+        category=parsed["category"],
+        merchant=parsed["merchant"],
+        notes=parsed["notes"],
+        expense_date=parsed["expense_date"],
+    )
+
+    db.add(expense)
+    db.commit()
+    db.refresh(expense)
+
     confirmation = (
-        f"Recorded expense: {parsed['amount']} {parsed['currency']} for {parsed['merchant']}"
-        f" on {parsed['expense_date']}."
+        f"Recorded expense: {expense.amount} {expense.currency}"
+        f" for {expense.merchant or 'your expense'} on {expense.expense_date}."
     )
     await whatsapp_service.send_text_message(user.whatsapp_id, confirmation)
+

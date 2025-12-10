@@ -15,7 +15,7 @@ class WhatsAppService:
     def __init__(self, access_token: str, phone_number_id: str):
         self.access_token = access_token
         self.phone_number_id = phone_number_id
-        self.base_url = "https://graph.facebook.com/v18.0"
+        self.base_url = "https://graph.facebook.com/v22.0"
 
     def verify_signature(self, body: bytes, signature: str) -> bool:
         expected = hmac.new(

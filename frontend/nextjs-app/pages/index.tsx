@@ -11,11 +11,13 @@ interface Expense {
 
 export default function Home() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const apiBase =
+    process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
   useEffect(() => {
     async function fetchExpenses() {
       try {
-        const res = await fetch("/api/expenses");
+        const res = await fetch(`${apiBase}/api/expenses`);
         if (!res.ok) throw new Error("Failed to load expenses");
         const data = await res.json();
         setExpenses(data.items);
