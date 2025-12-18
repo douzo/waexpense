@@ -78,6 +78,73 @@ If the token matches, the endpoint echoes `hub.challenge`.
 ### 8) Signature verification (POST)
 Real WA traffic includes `X-Hub-Signature-256`. We verify with `WHATSAPP_APP_SECRET`. For local mocks, omit the header or compute the correct HMAC of the raw body.
 
+## Connect WhatsApp Business to Your App
+
+### Step 1: Get WhatsApp Credentials from Meta Developer Console
+
+1. Go to [Meta for Developers](https://developers.facebook.com/)
+2. Create/select your app → **WhatsApp** product → **Getting Started**
+3. Copy these values:
+   - **Temporary Access Token** (or generate a permanent one)
+   - **Phone number ID** (from "To" field in API setup)
+   - **App Secret** (Settings → Basic → App Secret)
+4. Add them to your `backend/.env`:
+   ```
+   WHATSAPP_ACCESS_TOKEN="your-actual-token-here"
+   WHATSAPP_PHONE_NUMBER_ID="your-phone-number-id"
+   WHATSAPP_APP_SECRET="your-app-secret"
+   WHATSAPP_VERIFY_TOKEN="your-custom-verify-token"  # e.g., "my-secret-verify-123"
+   ```
+
+### Step 2: Expose Your Local Server Publicly
+
+Meta needs to reach your `/webhook` endpoint. Use **ngrok** (or similar):
+
+```bash
+# Install ngrok: https://ngrok.com/download
+ngrok http 8000
+```
+
+Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`). You'll use this as your webhook URL.
+
+### Step 3: Configure Webhook in Meta Developer Console
+
+1. In Meta Developer Console → **WhatsApp** → **Configuration** → **Webhook**
+2. Click **Edit** or **Add webhook**
+3. **Callback URL**: `https://abc123.ngrok.io/webhook`
+4. **Verify token**: Enter the same value you set in `WHATSAPP_VERIFY_TOKEN` (e.g., `my-secret-verify-123`)
+5. Click **Verify and Save**
+   - Meta will call `GET /webhook?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...`
+   - Your app should return the challenge number (handled automatically)
+6. **Subscribe** to `messages` field (check the checkbox)
+7. Click **Save**
+
+### Step 4: Test the Connection
+
+1. **Send a test message** from your phone to the WhatsApp Business number
+2. Check your FastAPI logs — you should see:
+   - Webhook payload received
+   - Expense parsed and saved
+   - Confirmation message sent back
+
+Example test messages:
+- `"Dinner 23.5 USD restaurant"`
+- `"bus to kyoto 5000 JPY"`
+- `"2kg apples 200 rupees"`
+
+### Step 5: Verify It Works
+
+- Check your database: `sqlite3 backend/app.db "SELECT * FROM expenses;"`
+- Or hit the API: `curl http://127.0.0.1:8000/api/expenses`
+- You should see the expense you just sent via WhatsApp!
+
+### Troubleshooting
+
+- **Webhook verification fails**: Ensure `WHATSAPP_VERIFY_TOKEN` matches exactly in both `.env` and Meta console
+- **No messages received**: Check ngrok is running, webhook is subscribed to `messages`, and your phone number is added to test numbers in Meta console
+- **Signature verification fails**: Ensure `WHATSAPP_APP_SECRET` matches your Meta app secret
+- **Messages not replying**: Check `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` are correct
+
 ### 9) Optional: use Postgres locally
 - Set `DATABASE_URL=postgresql+psycopg2://user:pass@localhost:5432/waexpense`
 - Ensure the DB exists; the app will auto-create tables on start (demo only—use Alembic later).

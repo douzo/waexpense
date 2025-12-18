@@ -15,13 +15,23 @@ class WhatsAppService:
     def __init__(self, access_token: str, phone_number_id: str):
         self.access_token = access_token
         self.phone_number_id = phone_number_id
-        self.base_url = "https://graph.facebook.com/v22.0"
+        self.base_url = "https://graph.facebook.com/v24.0"
 
     def verify_signature(self, body: bytes, signature: str) -> bool:
+        """
+        Verify WhatsApp webhook signature.
+        Meta sends signature as "sha256=<hash>" or just the hash.
+        We compute expected hash and compare.
+        """
+        # Remove "sha256=" prefix if present
+        signature_clean = signature.replace("sha256=", "") if signature.startswith("sha256=") else signature
+        
+        # Compute expected signature
         expected = hmac.new(
             settings.whatsapp_app_secret.encode(), body, sha256
         ).hexdigest()
-        return hmac.compare_digest(expected, signature)
+        
+        return hmac.compare_digest(expected, signature_clean)
 
     async def send_text_message(self, wa_id: str, text: str) -> Optional[Dict[str, Any]]:
         url = f"{self.base_url}/{self.phone_number_id}/messages"

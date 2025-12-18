@@ -5,7 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Expense, Receipt, User
+from app.models import Expense
+from app.services.auth import get_current_user
+from app.models import User
 
 router = APIRouter(prefix="/api")
 
@@ -28,11 +30,16 @@ def _serialize_expense(expense: Expense) -> dict:
 @router.get("/expenses")
 async def list_expenses(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     limit: int = 50,
     offset: int = 0,
     category: Optional[str] = None,
 ) -> dict:
-    query = select(Expense).order_by(Expense.expense_date.desc(), Expense.created_at.desc())
+    query = (
+        select(Expense)
+        .where(Expense.user_id == current_user.id)
+        .order_by(Expense.expense_date.desc(), Expense.created_at.desc())
+    )
     if category:
         query = query.where(Expense.category == category)
 

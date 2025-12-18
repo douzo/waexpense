@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -20,25 +20,71 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
-@router.post("/webhook")
-async def handle_webhook(
-    request: Request,
-    db: Session = Depends(get_db),
-    x_hub_signature_256: Optional[str] = Header(None),
+def _verify_webhook_logic(hub_mode: str, hub_verify_token: str, hub_challenge: str):
+    """Shared webhook verification logic."""
+    expected_token = settings.whatsapp_verify_token
+    token_match = hub_verify_token == expected_token
+    
+    logger.info(
+        "Webhook verification attempt: mode=%s, received_token=%s, expected_token=%s, match=%s",
+        hub_mode,
+        hub_verify_token[:10] + "..." if len(hub_verify_token) > 10 else hub_verify_token,
+        expected_token[:10] + "..." if len(expected_token) > 10 else expected_token,
+        token_match
+    )
+    
+    if hub_mode == "subscribe" and token_match:
+        logger.info("Webhook verified successfully")
+        return int(hub_challenge)
+    else:
+        logger.warning(
+            "Webhook verification failed: mode=%s (expected 'subscribe'), token_match=%s",
+            hub_mode,
+            token_match
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Verification failed")
+
+
+@router.get("/webhook")
+async def verify_webhook(
+    hub_mode: str = Query(..., alias="hub.mode"),
+    hub_verify_token: str = Query(..., alias="hub.verify_token"),
+    hub_challenge: str = Query(..., alias="hub.challenge"),
 ):
     """
-    WhatsApp webhook entry point.
-    - Optionally verify X-Hub-Signature-256 if provided.
-    - Dispatch text messages to the parser and store expenses.
+    Webhook verification endpoint for Meta's initial challenge.
+    Meta will call GET /webhook?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...
+    """
+    return _verify_webhook_logic(hub_mode, hub_verify_token, hub_challenge)
+
+
+
+async def _handle_webhook_payload(
+    request: Request,
+    db: Session,
+    x_hub_signature_256: Optional[str],
+):
+    """
+    Shared webhook payload handling logic.
+    Processes incoming WhatsApp messages and creates expenses.
     """
     body_bytes = await request.body()
-    if x_hub_signature_256 and not whatsapp_service.verify_signature(
-        body_bytes, x_hub_signature_256
-    ):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bad signature")
+    
+    # Verify signature if provided (Meta sends it with "sha256=" prefix)
+    if x_hub_signature_256:
+        if not whatsapp_service.verify_signature(body_bytes, x_hub_signature_256):
+            logger.warning("Webhook signature verification failed")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bad signature")
 
-    payload = await request.json()
-    logger.debug("Received webhook payload: %s", payload)
+    # Parse JSON payload
+    import json
+    try:
+        payload = json.loads(body_bytes.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse webhook JSON: %s", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON")
+    
+    logger.info("Received webhook payload: %s", payload)
 
     entries: List[Dict[str, Any]] = payload.get("entry", [])
     for entry in entries:
@@ -52,12 +98,29 @@ async def handle_webhook(
     return {"status": "received"}
 
 
+@router.post("/webhook")
+async def handle_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    x_hub_signature_256: Optional[str] = Header(None, alias="X-Hub-Signature-256"),
+):
+    """
+    WhatsApp webhook entry point for incoming messages at /webhook.
+    - Verifies X-Hub-Signature-256 if provided.
+    - Parses messages and creates expenses.
+    """
+    return await _handle_webhook_payload(request, db, x_hub_signature_256)
+
+
+
+
 async def _handle_message(db: Session, message: Dict[str, Any], contacts: List[Dict[str, Any]]):
     msg_type = message.get("type")
-    wa_id = contacts[0].get("wa_id") if contacts else None
+    # Meta sends wa_id in message["from"] field, fallback to contacts if available
+    wa_id = message.get("from") or (contacts[0].get("wa_id") if contacts else None)
 
     if not wa_id:
-        logger.warning("No wa_id found in message; skipping")
+        logger.warning("No wa_id found in message; skipping. Message: %s", message)
         return
 
     user = db.query(User).filter(User.whatsapp_id == wa_id).first()
@@ -82,7 +145,7 @@ def _extract_text_body(message: Dict[str, Any]) -> str:
 
 async def _handle_text_message(db: Session, user: User, message: Dict[str, Any]):
     body = _extract_text_body(message)
-    parsed = parse_expense_text(body)
+    parsed = await parse_expense_text(body)
 
     if not parsed["amount"]:
         logger.info("No amount found in message '%s'; skipping expense creation", body)

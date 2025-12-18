@@ -1,7 +1,9 @@
 import re
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
+
+from app.services.external_text_parser import call_external_text_parser
 
 CURRENCY_PATTERN = r"(?P<currency>[A-Za-z]{3}|\$|€|£|¥|₹)"
 AMOUNT_PATTERN = r"(?P<amount>\d+[.,]?\d*)"
@@ -11,13 +13,43 @@ DATE_PATTERNS = [
 ]
 
 CATEGORY_KEYWORDS = {
-    "grocery": {"market", "grocery", "supermarket"},
+    "grocery": {"market, grocery", "supermarket"},
     "transport": {"uber", "taxi", "train", "bus"},
     "food": {"dinner", "lunch", "breakfast", "restaurant"},
 }
 
 
-def parse_expense_text(message: str) -> Dict[str, Optional[str]]:
+async def parse_expense_text(message: str) -> Dict[str, Any]:
+    """
+    Parse a free-form expense text into structured fields.
+
+    Flow:
+    1. Try external text parser (AWS / GCP / custom) if configured.
+    2. Fallback to local regex-based heuristic parser.
+    """
+    external = await call_external_text_parser(message)
+    if external:
+        # Normalize external response types
+
+        # expense_date: convert ISO string -> date
+        raw_date = external.get("expense_date")
+        if isinstance(raw_date, str):
+            try:
+                external["expense_date"] = datetime.fromisoformat(raw_date).date()
+            except ValueError:
+                external["expense_date"] = date.today()
+
+        # amount: ensure Decimal
+        raw_amount = external.get("amount")
+        if not isinstance(raw_amount, Decimal) and raw_amount is not None:
+            external["amount"] = Decimal(str(raw_amount))
+
+        return external
+
+    return _parse_local(message)
+
+
+def _parse_local(message: str) -> Dict[str, Any]:
     lowered = message.lower()
 
     currency_match = re.search(CURRENCY_PATTERN, message)
