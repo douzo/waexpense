@@ -267,6 +267,22 @@ resource "aws_iam_role_policy" "task_ssm" {
   })
 }
 
+resource "aws_iam_role_policy" "execution_ssm" {
+  name = "${local.name_prefix}-execution-ssm"
+  role = aws_iam_role.task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"],
+        Effect   = "Allow",
+        Resource = values(var.secret_env_parameters)
+      }
+    ]
+  })
+}
+
 locals {
   backend_env = concat(
     [
@@ -281,10 +297,6 @@ locals {
       {
         name  = "DATABASE_URL"
         value = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.address}:${aws_db_instance.this.port}/${var.db_name}"
-      },
-      {
-        name  = "EXTERNAL_TEXT_PARSER_URL"
-        value = var.external_text_parser_url
       },
       {
         name  = "LOGIN_CODE_EXPIRY_MINUTES"
