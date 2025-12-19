@@ -72,4 +72,19 @@ coverage/
 # Build output
 build/
 dist/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+terraform.tfvars
+terraform.tfvars.json
+*.tfvars
+*.tfvars.json
+
+# Docker artifacts
+backend/.python_packages/
+*.tar
     

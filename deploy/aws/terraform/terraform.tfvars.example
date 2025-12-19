@@ -1,0 +1,27 @@
+aws_region  = "us-east-1"
+project     = "waexpense"
+environment = "prod"
+
+db_username = "waexpense"
+db_password = "change-me"
+db_name     = "waexpense"
+
+whatsapp_phone_number_id = "123456789"
+external_text_parser_url = "https://example.com/parser"
+
+# Provide the ARNs of SecureString SSM parameters for secrets.
+# Example:
+# secret_env_parameters = {
+#   JWT_SECRET_KEY          = "arn:aws:ssm:us-east-1:123456789012:parameter/waexpense/prod/JWT_SECRET_KEY"
+#   WHATSAPP_VERIFY_TOKEN   = "arn:aws:ssm:us-east-1:123456789012:parameter/waexpense/prod/WHATSAPP_VERIFY_TOKEN"
+#   WHATSAPP_APP_SECRET     = "arn:aws:ssm:us-east-1:123456789012:parameter/waexpense/prod/WHATSAPP_APP_SECRET"
+#   WHATSAPP_ACCESS_TOKEN   = "arn:aws:ssm:us-east-1:123456789012:parameter/waexpense/prod/WHATSAPP_ACCESS_TOKEN"
+#   EXTERNAL_TEXT_PARSER_API_KEY = "arn:aws:ssm:us-east-1:123456789012:parameter/waexpense/prod/EXTERNAL_TEXT_PARSER_API_KEY"
+# }
+secret_env_parameters = {}
+
+# Optionally override APP_NAME or other plaintext env vars
+plain_env_overrides = {
+  APP_NAME = "WA Expense Tracker"
+  DEBUG    = "false"
+}
