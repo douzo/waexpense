@@ -127,3 +127,112 @@ Configure repository secrets (Settings → Secrets and variables → Actions):
 6. **Rotate secrets**: update SSM parameters and redeploy ECS to pick up new values.
 
 Following this process ensures deployments are reproducible, reviewable, and require no manual clicking in the AWS console.
+
+---
+
+## 7. Step-by-Step Deployment (First Time)
+
+### 1) Configure AWS CLI
+```bash
+aws configure
+aws sts get-caller-identity
+```
+
+### 2) Create SSM Parameters (Secrets)
+Create SecureString parameters for every value in `backend/.env`:
+```bash
+aws ssm put-parameter --name "/waexpense/dev/JWT_SECRET_KEY" --type "SecureString" --value "..." --overwrite
+```
+Repeat for all secrets and note the ARNs.
+
+### 3) Configure Terraform
+```bash
+cd deploy/aws/terraform
+cp terraform.tfvars.example terraform.tfvars
+```
+Edit `terraform.tfvars`:
+- Fill `aws_region`, `environment`, and DB credentials.
+- Add `secret_env_parameters` with the SSM ARNs.
+- (Optional) enable HTTPS and access logs if you have an ACM cert.
+
+### 4) Provision Infrastructure
+```bash
+terraform init
+terraform plan
+terraform apply
+```
+Capture outputs: `alb_dns_name`, `ecr_backend_repo`, `frontend_bucket`.
+
+### 5) Build + Push Backend Image
+```bash
+cd ../../..
+BACKEND_REPO=<ecr_backend_repo_from_tf_output>
+docker build -f backend/Dockerfile -t $BACKEND_REPO:v1 .
+docker tag $BACKEND_REPO:v1 $BACKEND_REPO:latest
+docker push $BACKEND_REPO:v1
+docker push $BACKEND_REPO:latest
+```
+
+### 6) Deploy Backend to ECS
+```bash
+aws ecs update-service \
+  --cluster waexpense-dev-cluster \
+  --service waexpense-dev-svc \
+  --force-new-deployment \
+  --region us-east-1
+```
+
+### 7) Build + Export Frontend
+```bash
+cd frontend/nextjs-app
+export NEXT_PUBLIC_API_BASE=http://<alb_dns_name>
+npm ci
+npm run build
+npm run export
+```
+
+### 8) Upload Frontend to S3
+```bash
+aws s3 sync frontend/nextjs-app/out/ s3://<frontend_bucket>/ --delete
+```
+
+### 9) Validate
+```bash
+curl http://<alb_dns_name>/health
+```
+Open the S3 website endpoint (or CloudFront URL) and verify login works.
+
+---
+
+## 8. Troubleshooting Notes (From This Deployment)
+
+### Terraform + AWS Access
+- **STS `SignatureDoesNotMatch`**: AWS credentials invalid or wrong region; re-run `aws configure` and verify `aws sts get-caller-identity` works.
+- **S3/DNS errors (`no such host`)**: local DNS/network issue; fix connectivity, then `terraform state push errored.tfstate`.
+- **DynamoDB lock error**: lock table must have partition key `LockID` (string). Recreate the table with correct schema.
+- **ECR repo already exists**: import existing repos into state:  
+  `terraform import aws_ecr_repository.backend waexpense-dev-backend`  
+  `terraform import aws_ecr_repository.frontend waexpense-dev-frontend`
+- **RDS engine version unavailable**: use a supported version in your region (e.g., `15.3` in us-east-1).
+
+### ECS + IAM / Secrets
+- **SSM AccessDenied during task start**: ECS uses the **execution role** to fetch secrets at startup. Grant `ssm:GetParameters` to the execution role (not just the task role).
+- **Missing env var (e.g., `JWT_ALGORITHM`)**: SSM parameter names are case-sensitive; ensure your secret key name is uppercase and matches the env var.
+- **`psycopg2` missing**: add `psycopg2-binary` to `backend/requirements.txt`, rebuild and redeploy.
+
+### Docker Build/Push
+- **Docker build fails to find `backend/app`**: run `docker build` from repo root so `backend/` is in context.
+- **`app.db` not found during build**: removed from Dockerfile since DB file isn’t tracked.
+- **Push fails with broken pipe**: network/proxy issue; retry or use another network/CI to push.
+- **`latest` tag missing**: tag `latest` in workflow so ECS pulls latest by default.
+
+### Frontend (Next.js → S3)
+- **`npm run export` missing**: add `"export": "next export"` to `package.json`.
+- **GitHub Actions cache error**: commit `frontend/nextjs-app/package-lock.json` or remove cache step.
+- **S3 403 AccessDenied**: disable block public access for bucket and add a public read bucket policy.
+- **S3 404 NoSuchKey on `/login`**: S3 doesn’t rewrite routes; use trailing slash or add `next.config.js` with `output: "export"` and `trailingSlash: true`, then re-export.
+- **Sync error “Unknown options: /”**: `FRONTEND_BUCKET` secret empty; add guard and set secret.
+
+### HTTPS + Webhook
+- **WhatsApp webhook verification fails**: requires HTTPS; ALB HTTP URL won’t pass. Use CloudFront default HTTPS domain or a custom domain + ACM cert.
+- **CloudFront default HTTPS**: set ALB as origin, allow all methods, caching disabled, use `https://<cloudfront-domain>/webhook`.

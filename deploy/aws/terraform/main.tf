@@ -89,6 +89,61 @@ resource "aws_s3_bucket_public_access_block" "receipts" {
   restrict_public_buckets = true
 }
 
+# ALB access logs
+resource "aws_s3_bucket" "alb_logs" {
+  count  = var.enable_alb_access_logs ? 1 : 0
+  bucket = var.alb_log_bucket_name != "" ? var.alb_log_bucket_name : "${local.name_prefix}-alb-logs"
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  count                   = var.enable_alb_access_logs ? 1 : 0
+  bucket                  = aws_s3_bucket.alb_logs[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+data "aws_iam_policy_document" "alb_logs" {
+  count = var.enable_alb_access_logs ? 1 : 0
+
+  statement {
+    sid = "AWSLogDeliveryWrite"
+
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.alb_logs[0].arn}/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-acl"
+      values   = ["bucket-owner-full-control"]
+    }
+  }
+
+  statement {
+    sid = "AWSLogDeliveryAclCheck"
+
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+
+    actions   = ["s3:GetBucketAcl"]
+    resources = [aws_s3_bucket.alb_logs[0].arn]
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  count  = var.enable_alb_access_logs ? 1 : 0
+  bucket = aws_s3_bucket.alb_logs[0].id
+  policy = data.aws_iam_policy_document.alb_logs[0].json
+}
+
 # RDS
 resource "aws_db_subnet_group" "this" {
   name       = "${local.name_prefix}-db-subnets"
@@ -185,6 +240,14 @@ resource "aws_lb" "api" {
   idle_timeout       = 60
   security_groups    = [aws_security_group.alb.id]
   subnets            = module.vpc.public_subnets
+
+  dynamic "access_logs" {
+    for_each = var.enable_alb_access_logs ? [1] : []
+    content {
+      bucket  = aws_s3_bucket.alb_logs[0].bucket
+      enabled = true
+    }
+  }
 }
 
 resource "aws_lb_target_group" "api" {
@@ -206,6 +269,20 @@ resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.api.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.api.arn
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  count             = var.enable_https ? 1 : 0
+  load_balancer_arn = aws_lb.api.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = var.acm_certificate_arn
 
   default_action {
     type             = "forward"

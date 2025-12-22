@@ -68,6 +68,30 @@ variable "container_port" {
   default     = 8000
 }
 
+variable "enable_https" {
+  description = "Enable HTTPS listener on the ALB"
+  type        = bool
+  default     = false
+}
+
+variable "acm_certificate_arn" {
+  description = "ACM certificate ARN for the HTTPS listener"
+  type        = string
+  default     = ""
+}
+
+variable "enable_alb_access_logs" {
+  description = "Enable ALB access logs to S3"
+  type        = bool
+  default     = false
+}
+
+variable "alb_log_bucket_name" {
+  description = "Optional override for the ALB access log bucket name"
+  type        = string
+  default     = ""
+}
+
 variable "health_check_path" {
   description = "ALB health check path"
   type        = string

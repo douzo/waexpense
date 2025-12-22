@@ -9,6 +9,14 @@ db_name     = "waexpense"
 whatsapp_phone_number_id = "123456789"
 external_text_parser_url = "https://example.com/parser"
 
+# Enable HTTPS on the ALB (requires an ACM certificate in the same region)
+enable_https        = true
+acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd-1234-efgh-5678"
+
+# Enable ALB access logs to S3
+enable_alb_access_logs = true
+alb_log_bucket_name    = "waexpense-prod-alb-logs"
+
 # Provide the ARNs of SecureString SSM parameters for secrets.
 # Example:
 # secret_env_parameters = {
