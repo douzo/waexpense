@@ -40,12 +40,14 @@ jobs:
         run: |
           IMAGE_TAG=${GITHUB_SHA::7}
           docker build -f backend/Dockerfile -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REPOSITORY:latest
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
         id: build
 
       - name: Push image
         run: |
           docker push $ECR_REPOSITORY:${{ steps.build.outputs.image_tag }}
+          docker push $ECR_REPOSITORY:latest
 
       - name: Update ECS service
         run: |
