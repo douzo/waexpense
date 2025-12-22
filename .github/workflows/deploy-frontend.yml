@@ -12,6 +12,7 @@ env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   FRONTEND_BUCKET: ${{ secrets.FRONTEND_BUCKET }}
   CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+  NEXT_PUBLIC_API_BASE: ${{ secrets.NEXT_PUBLIC_API_BASE }}
 
 jobs:
   deploy:
