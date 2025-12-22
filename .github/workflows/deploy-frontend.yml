@@ -50,7 +50,11 @@ jobs:
 
       - name: Sync to S3
         run: |
-          aws s3 sync frontend/nextjs-app/out/ s3://$FRONTEND_BUCKET/ --delete
+          if [ -z "$FRONTEND_BUCKET" ]; then
+            echo "FRONTEND_BUCKET is not set. Add it in GitHub Actions secrets."
+            exit 1
+          fi
+          aws s3 sync frontend/nextjs-app/out/ "s3://$FRONTEND_BUCKET" --delete
 
       - name: Invalidate CloudFront cache
         if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
