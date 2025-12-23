@@ -64,6 +64,13 @@ def _handle_record(db: Session, body: Dict[str, Any]):
         logger.warning("Missing wa_id; skipping message")
         return
 
+    if expense.get("amount") is None:
+        enqueue_outbound_text(
+            wa_id,
+            "I couldn't find an amount in that message. Please include something like 'Lunch 12 USD'.",
+        )
+        return
+
     record = _persist_expense(db, wa_id, expense)
     confirmation = (
         f"Recorded expense: {record.amount} {record.currency}"
