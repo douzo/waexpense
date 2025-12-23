@@ -1,8 +1,3 @@
-output "alb_dns_name" {
-  description = "Public DNS for the API load balancer"
-  value       = aws_lb.api.dns_name
-}
-
 output "frontend_bucket" {
   description = "S3 bucket for hosting the frontend build"
   value       = aws_s3_bucket.frontend.bucket
@@ -26,4 +21,19 @@ output "ecr_frontend_repo" {
 output "db_address" {
   description = "RDS endpoint for connecting from migration jobs"
   value       = aws_db_instance.this.address
+}
+
+output "backend_api_endpoint" {
+  description = "HTTP API Gateway endpoint for the backend"
+  value       = aws_apigatewayv2_api.backend.api_endpoint
+}
+
+output "text_parser_lambda_name" {
+  description = "Lambda function name for the text parser"
+  value       = aws_lambda_function.text_parser.function_name
+}
+
+output "text_parser_api_endpoint" {
+  description = "HTTP API endpoint for the text parser Lambda"
+  value       = var.enable_text_parser_api ? aws_apigatewayv2_api.text_parser[0].api_endpoint : null
 }

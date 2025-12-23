@@ -21,6 +21,12 @@ variable "vpc_cidr" {
   default     = "10.20.0.0/16"
 }
 
+variable "enable_nat_gateway" {
+  description = "Enable NAT gateway for private subnets"
+  type        = bool
+  default     = false
+}
+
 variable "public_subnet_cidrs" {
   description = "List of public subnet CIDRs"
   type        = list(string)
@@ -68,35 +74,6 @@ variable "container_port" {
   default     = 8000
 }
 
-variable "enable_https" {
-  description = "Enable HTTPS listener on the ALB"
-  type        = bool
-  default     = false
-}
-
-variable "acm_certificate_arn" {
-  description = "ACM certificate ARN for the HTTPS listener"
-  type        = string
-  default     = ""
-}
-
-variable "enable_alb_access_logs" {
-  description = "Enable ALB access logs to S3"
-  type        = bool
-  default     = false
-}
-
-variable "alb_log_bucket_name" {
-  description = "Optional override for the ALB access log bucket name"
-  type        = string
-  default     = ""
-}
-
-variable "health_check_path" {
-  description = "ALB health check path"
-  type        = string
-  default     = "/health"
-}
 
 variable "backend_cpu" {
   description = "Fargate task CPU units"
@@ -122,6 +99,36 @@ variable "backend_image" {
   default     = ""
 }
 
+variable "backend_lambda_image" {
+  description = "Container image URI for backend Lambda functions"
+  type        = string
+  default     = ""
+}
+
+variable "backend_lambda_memory" {
+  description = "Backend Lambda memory size (MB)"
+  type        = number
+  default     = 512
+}
+
+variable "backend_lambda_timeout" {
+  description = "Backend Lambda timeout in seconds"
+  type        = number
+  default     = 30
+}
+
+variable "inbound_queue_name" {
+  description = "SQS queue name for inbound webhook messages"
+  type        = string
+  default     = "inbound"
+}
+
+variable "outbound_queue_name" {
+  description = "SQS queue name for outbound WhatsApp messages"
+  type        = string
+  default     = "outbound"
+}
+
 variable "app_name" {
   description = "APP_NAME value"
   type        = string
@@ -141,6 +148,11 @@ variable "external_text_parser_url" {
   default     = ""
 }
 
+variable "whatsapp_phone_number_id" {
+  description = "WhatsApp Cloud API phone number id"
+  type        = string
+}
+
 variable "login_code_expiry_minutes" {
   description = "Expiry minutes for login codes"
   type        = number
@@ -157,4 +169,64 @@ variable "secret_env_parameters" {
   description = "Map of ENV_VAR_NAME => SSM parameter ARN (SecureString)"
   type        = map(string)
   default     = {}
+}
+
+variable "lambda_text_parser_name" {
+  description = "Lambda function name for the text parser"
+  type        = string
+  default     = "waexpense-text-parser"
+}
+
+variable "lambda_text_parser_role_name" {
+  description = "Existing IAM role name for the text parser Lambda"
+  type        = string
+  default     = "waexpense-text-parser-role"
+}
+
+variable "lambda_text_parser_runtime" {
+  description = "Lambda runtime"
+  type        = string
+  default     = "python3.11"
+}
+
+variable "lambda_text_parser_handler" {
+  description = "Lambda handler entrypoint"
+  type        = string
+  default     = "handler.lambda_handler"
+}
+
+variable "lambda_text_parser_memory" {
+  description = "Lambda memory size (MB)"
+  type        = number
+  default     = 256
+}
+
+variable "lambda_text_parser_timeout" {
+  description = "Lambda timeout in seconds"
+  type        = number
+  default     = 20
+}
+
+variable "lambda_text_parser_env" {
+  description = "Environment variables for the text parser Lambda"
+  type        = map(string)
+  default     = {}
+}
+
+variable "enable_bedrock_policy" {
+  description = "Attach Bedrock invoke permissions to the Lambda role"
+  type        = bool
+  default     = true
+}
+
+variable "bedrock_model_arns" {
+  description = "List of Bedrock model ARNs allowed for InvokeModel"
+  type        = list(string)
+  default     = ["*"]
+}
+
+variable "enable_text_parser_api" {
+  description = "Provision an HTTP API Gateway for the text parser Lambda"
+  type        = bool
+  default     = true
 }

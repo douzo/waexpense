@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.31"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
   }
 }
 
@@ -31,8 +35,8 @@ module "vpc" {
   azs                = local.azs
   private_subnets    = var.private_subnet_cidrs
   public_subnets     = var.public_subnet_cidrs
-  enable_nat_gateway = true
-  single_nat_gateway = true
+  enable_nat_gateway = var.enable_nat_gateway
+  single_nat_gateway = var.enable_nat_gateway
 
   public_subnet_tags = {
     "kubernetes.io/role/elb" = "1"
@@ -52,6 +56,28 @@ resource "aws_ecr_repository" "backend" {
   image_scanning_configuration {
     scan_on_push = true
   }
+}
+
+data "aws_iam_policy_document" "lambda_ecr_pull" {
+  statement {
+    sid = "LambdaEcrPull"
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchCheckLayerAvailability"
+    ]
+  }
+}
+
+resource "aws_ecr_repository_policy" "backend_lambda_pull" {
+  repository = aws_ecr_repository.backend.name
+  policy     = data.aws_iam_policy_document.lambda_ecr_pull.json
 }
 
 resource "aws_ecr_repository" "frontend" {
@@ -89,60 +115,6 @@ resource "aws_s3_bucket_public_access_block" "receipts" {
   restrict_public_buckets = true
 }
 
-# ALB access logs
-resource "aws_s3_bucket" "alb_logs" {
-  count  = var.enable_alb_access_logs ? 1 : 0
-  bucket = var.alb_log_bucket_name != "" ? var.alb_log_bucket_name : "${local.name_prefix}-alb-logs"
-}
-
-resource "aws_s3_bucket_public_access_block" "alb_logs" {
-  count                   = var.enable_alb_access_logs ? 1 : 0
-  bucket                  = aws_s3_bucket.alb_logs[0].id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-data "aws_iam_policy_document" "alb_logs" {
-  count = var.enable_alb_access_logs ? 1 : 0
-
-  statement {
-    sid = "AWSLogDeliveryWrite"
-
-    principals {
-      type        = "Service"
-      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
-    }
-
-    actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.alb_logs[0].arn}/*"]
-
-    condition {
-      test     = "StringEquals"
-      variable = "s3:x-amz-acl"
-      values   = ["bucket-owner-full-control"]
-    }
-  }
-
-  statement {
-    sid = "AWSLogDeliveryAclCheck"
-
-    principals {
-      type        = "Service"
-      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
-    }
-
-    actions   = ["s3:GetBucketAcl"]
-    resources = [aws_s3_bucket.alb_logs[0].arn]
-  }
-}
-
-resource "aws_s3_bucket_policy" "alb_logs" {
-  count  = var.enable_alb_access_logs ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
-  policy = data.aws_iam_policy_document.alb_logs[0].json
-}
 
 # RDS
 resource "aws_db_subnet_group" "this" {
@@ -156,17 +128,10 @@ resource "aws_security_group" "db" {
   vpc_id      = module.vpc.vpc_id
 }
 
-resource "aws_security_group" "alb" {
-  name        = "${local.name_prefix}-alb-sg"
-  description = "Allow inbound HTTP/HTTPS"
+resource "aws_security_group" "lambda" {
+  name        = "${local.name_prefix}-lambda-sg"
+  description = "Lambda access to RDS and VPC endpoints"
   vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   egress {
     from_port   = 0
@@ -176,24 +141,16 @@ resource "aws_security_group" "alb" {
   }
 }
 
-resource "aws_security_group" "ecs" {
-  name        = "${local.name_prefix}-ecs-sg"
-  description = "Allow outbound internet + db + alb traffic"
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${local.name_prefix}-endpoints-sg"
+  description = "Allow Lambda to reach VPC endpoints"
   vpc_id      = module.vpc.vpc_id
 
   ingress {
-    description      = "From ALB"
-    from_port        = var.container_port
-    to_port          = var.container_port
-    protocol         = "tcp"
-    security_groups  = [aws_security_group.alb.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lambda.id]
   }
 }
 
@@ -204,7 +161,7 @@ resource "aws_security_group_rule" "db_ingress" {
   protocol                 = "tcp"
   description              = "ECS to DB"
   security_group_id        = aws_security_group.db.id
-  source_security_group_id = aws_security_group.ecs.id
+  source_security_group_id = aws_security_group.lambda.id
 }
 
 resource "aws_security_group_rule" "db_egress" {
@@ -233,211 +190,282 @@ resource "aws_db_instance" "this" {
   publicly_accessible    = false
 }
 
-# Load balancer
-resource "aws_lb" "api" {
-  name               = "${local.name_prefix}-alb"
-  load_balancer_type = "application"
-  idle_timeout       = 60
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = module.vpc.public_subnets
-
-  dynamic "access_logs" {
-    for_each = var.enable_alb_access_logs ? [1] : []
-    content {
-      bucket  = aws_s3_bucket.alb_logs[0].bucket
-      enabled = true
-    }
-  }
-}
-
-resource "aws_lb_target_group" "api" {
-  name        = "${local.name_prefix}-tg"
-  port        = var.container_port
-  protocol    = "HTTP"
-  vpc_id      = module.vpc.vpc_id
-  target_type = "ip"
-
-  health_check {
-    path                = var.health_check_path
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    matcher             = "200-399"
-  }
-}
-
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.api.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.api.arn
-  }
-}
-
-resource "aws_lb_listener" "https" {
-  count             = var.enable_https ? 1 : 0
-  load_balancer_arn = aws_lb.api.arn
-  port              = 443
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = var.acm_certificate_arn
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.api.arn
-  }
-}
-
-# ECS
-resource "aws_ecs_cluster" "this" {
-  name = "${local.name_prefix}-cluster"
-}
-
-resource "aws_cloudwatch_log_group" "backend" {
-  name              = "/aws/ecs/${local.name_prefix}-backend"
-  retention_in_days = 30
-}
-
-data "aws_iam_policy_document" "task_execution_assume" {
+# Serverless backend: API Gateway + Lambda + SQS
+data "aws_iam_policy_document" "lambda_assume" {
   statement {
     effect = "Allow"
 
     principals {
       type        = "Service"
-      identifiers = ["ecs-tasks.amazonaws.com"]
+      identifiers = ["lambda.amazonaws.com"]
     }
 
     actions = ["sts:AssumeRole"]
   }
 }
 
-resource "aws_iam_role" "task_execution" {
-  name               = "${local.name_prefix}-task-execution"
-  assume_role_policy = data.aws_iam_policy_document.task_execution_assume.json
+resource "aws_iam_role" "lambda_vpc" {
+  name               = "${local.name_prefix}-lambda-vpc"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
-resource "aws_iam_role_policy_attachment" "execution_policy" {
-  role       = aws_iam_role.task_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+resource "aws_iam_role_policy_attachment" "lambda_vpc_basic" {
+  role       = aws_iam_role.lambda_vpc.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role" "task_role" {
-  name               = "${local.name_prefix}-task-role"
-  assume_role_policy = data.aws_iam_policy_document.task_execution_assume.json
+resource "aws_iam_role_policy_attachment" "lambda_vpc_network" {
+  role       = aws_iam_role.lambda_vpc.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-resource "aws_iam_role_policy" "task_ssm" {
-  name = "${local.name_prefix}-task-ssm"
-  role = aws_iam_role.task_role.id
+resource "aws_iam_role" "lambda_public" {
+  name               = "${local.name_prefix}-lambda-public"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_public_basic" {
+  role       = aws_iam_role.lambda_public.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_sqs_queue" "inbound" {
+  name = "${local.name_prefix}-${var.inbound_queue_name}"
+}
+
+resource "aws_sqs_queue" "outbound" {
+  name = "${local.name_prefix}-${var.outbound_queue_name}"
+}
+
+resource "aws_iam_role_policy" "lambda_vpc_sqs" {
+  name = "${local.name_prefix}-lambda-vpc-sqs"
+  role = aws_iam_role.lambda_vpc.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action   = ["ssm:GetParameter", "ssm:GetParameters"],
-        Effect   = "Allow",
-        Resource = var.secret_env_parameters != {} ? values(var.secret_env_parameters) : ["*"]
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:SendMessage"
+        ]
+        Resource = [
+          aws_sqs_queue.inbound.arn,
+          aws_sqs_queue.outbound.arn
+        ]
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy" "execution_ssm" {
-  name = "${local.name_prefix}-execution-ssm"
-  role = aws_iam_role.task_execution.id
+resource "aws_iam_role_policy" "lambda_public_sqs" {
+  name = "${local.name_prefix}-lambda-public-sqs"
+  role = aws_iam_role.lambda_public.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action   = ["ssm:GetParameter", "ssm:GetParameters"],
-        Effect   = "Allow",
-        Resource = values(var.secret_env_parameters)
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:SendMessage"
+        ]
+        Resource = [
+          aws_sqs_queue.inbound.arn,
+          aws_sqs_queue.outbound.arn
+        ]
       }
     ]
   })
+}
+
+data "aws_ssm_parameter" "lambda_secrets" {
+  for_each = var.secret_env_parameters
+  name     = each.value
 }
 
 locals {
-  backend_env = concat(
-    [
-      {
-        name  = "APP_NAME"
-        value = var.app_name
-      },
-      {
-        name  = "DEBUG"
-        value = tostring(var.debug)
-      },
-      {
-        name  = "DATABASE_URL"
-        value = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.address}:${aws_db_instance.this.port}/${var.db_name}"
-      },
-      {
-        name  = "LOGIN_CODE_EXPIRY_MINUTES"
-        value = tostring(var.login_code_expiry_minutes)
-      }
-    ],
-    [for name, value in var.plain_env_overrides : { name = name, value = value }]
-  )
-  backend_secrets = [for name, arn in var.secret_env_parameters : { name = name, valueFrom = arn }]
-}
-
-resource "aws_ecs_task_definition" "backend" {
-  family                   = "${local.name_prefix}-backend"
-  cpu                      = var.backend_cpu
-  memory                   = var.backend_memory
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  execution_role_arn       = aws_iam_role.task_execution.arn
-  task_role_arn            = aws_iam_role.task_role.arn
-
-  container_definitions = jsonencode([
+  lambda_secrets = { for key, value in data.aws_ssm_parameter.lambda_secrets : key => value.value }
+  base_env = merge(
     {
-      name      = "backend"
-      image     = var.backend_image != "" ? var.backend_image : "${aws_ecr_repository.backend.repository_url}:latest"
-      essential = true
-      portMappings = [
-        {
-          containerPort = var.container_port
-          hostPort      = var.container_port
-          protocol      = "tcp"
-        }
-      ]
-      environment = local.backend_env
-      secrets     = local.backend_secrets
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.backend.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "ecs"
-        }
-      }
-    }
-  ])
+      APP_NAME                 = var.app_name
+      DEBUG                    = tostring(var.debug)
+      DATABASE_URL             = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.address}:${aws_db_instance.this.port}/${var.db_name}"
+      WHATSAPP_PHONE_NUMBER_ID = var.whatsapp_phone_number_id
+      EXTERNAL_TEXT_PARSER_URL = var.external_text_parser_url
+      LOGIN_CODE_EXPIRY_MINUTES = tostring(var.login_code_expiry_minutes)
+      INBOUND_QUEUE_URL        = aws_sqs_queue.inbound.id
+      OUTBOUND_QUEUE_URL       = aws_sqs_queue.outbound.id
+    },
+    var.plain_env_overrides,
+    local.lambda_secrets
+  )
 }
 
-resource "aws_ecs_service" "backend" {
-  name            = "${local.name_prefix}-svc"
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.backend.arn
-  desired_count   = var.backend_desired_count
-  launch_type     = "FARGATE"
+resource "aws_lambda_function" "backend_api" {
+  function_name = "${local.name_prefix}-api"
+  role          = aws_iam_role.lambda_vpc.arn
+  package_type  = "Image"
+  image_uri     = var.backend_lambda_image != "" ? var.backend_lambda_image : "${aws_ecr_repository.backend.repository_url}:latest"
+  memory_size   = var.backend_lambda_memory
+  timeout       = var.backend_lambda_timeout
 
-  network_configuration {
-    security_groups  = [aws_security_group.ecs.id]
-    subnets          = module.vpc.private_subnets
-    assign_public_ip = false
+  vpc_config {
+    subnet_ids         = module.vpc.private_subnets
+    security_group_ids = [aws_security_group.lambda.id]
   }
 
-  load_balancer {
-    target_group_arn = aws_lb_target_group.api.arn
-    container_name   = "backend"
-    container_port   = var.container_port
+  image_config {
+    command = ["app.lambda_handlers.api.lambda_handler"]
   }
 
-  depends_on = [aws_lb_listener.http]
+  environment {
+    variables = local.base_env
+  }
+}
+
+resource "aws_lambda_function" "expense_worker" {
+  function_name = "${local.name_prefix}-worker"
+  role          = aws_iam_role.lambda_vpc.arn
+  package_type  = "Image"
+  image_uri     = var.backend_lambda_image != "" ? var.backend_lambda_image : "${aws_ecr_repository.backend.repository_url}:latest"
+  memory_size   = var.backend_lambda_memory
+  timeout       = var.backend_lambda_timeout
+
+  vpc_config {
+    subnet_ids         = module.vpc.private_subnets
+    security_group_ids = [aws_security_group.lambda.id]
+  }
+
+  image_config {
+    command = ["app.lambda_handlers.expense_worker.lambda_handler"]
+  }
+
+  environment {
+    variables = local.base_env
+  }
+}
+
+resource "aws_lambda_function" "webhook_ingest" {
+  function_name = "${local.name_prefix}-webhook"
+  role          = aws_iam_role.lambda_public.arn
+  package_type  = "Image"
+  image_uri     = var.backend_lambda_image != "" ? var.backend_lambda_image : "${aws_ecr_repository.backend.repository_url}:latest"
+  memory_size   = var.backend_lambda_memory
+  timeout       = var.backend_lambda_timeout
+
+  image_config {
+    command = ["app.lambda_handlers.webhook_ingest.lambda_handler"]
+  }
+
+  environment {
+    variables = local.base_env
+  }
+}
+
+resource "aws_lambda_function" "outbound_sender" {
+  function_name = "${local.name_prefix}-outbound"
+  role          = aws_iam_role.lambda_public.arn
+  package_type  = "Image"
+  image_uri     = var.backend_lambda_image != "" ? var.backend_lambda_image : "${aws_ecr_repository.backend.repository_url}:latest"
+  memory_size   = var.backend_lambda_memory
+  timeout       = var.backend_lambda_timeout
+
+  image_config {
+    command = ["app.lambda_handlers.outbound_sender.lambda_handler"]
+  }
+
+  environment {
+    variables = local.base_env
+  }
+}
+
+resource "aws_lambda_event_source_mapping" "inbound_worker" {
+  event_source_arn = aws_sqs_queue.inbound.arn
+  function_name    = aws_lambda_function.expense_worker.arn
+}
+
+resource "aws_lambda_event_source_mapping" "outbound_sender" {
+  event_source_arn = aws_sqs_queue.outbound.arn
+  function_name    = aws_lambda_function.outbound_sender.arn
+}
+
+resource "aws_apigatewayv2_api" "backend" {
+  name          = "${local.name_prefix}-api"
+  protocol_type = "HTTP"
+}
+
+resource "aws_apigatewayv2_integration" "backend" {
+  api_id                 = aws_apigatewayv2_api.backend.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.backend_api.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_integration" "webhook" {
+  api_id                 = aws_apigatewayv2_api.backend.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.webhook_ingest.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "webhook_get" {
+  api_id    = aws_apigatewayv2_api.backend.id
+  route_key = "GET /webhook"
+  target    = "integrations/${aws_apigatewayv2_integration.webhook.id}"
+}
+
+resource "aws_apigatewayv2_route" "webhook_post" {
+  api_id    = aws_apigatewayv2_api.backend.id
+  route_key = "POST /webhook"
+  target    = "integrations/${aws_apigatewayv2_integration.webhook.id}"
+}
+
+resource "aws_apigatewayv2_route" "backend_root" {
+  api_id    = aws_apigatewayv2_api.backend.id
+  route_key = "ANY /"
+  target    = "integrations/${aws_apigatewayv2_integration.backend.id}"
+}
+
+resource "aws_apigatewayv2_route" "backend_proxy" {
+  api_id    = aws_apigatewayv2_api.backend.id
+  route_key = "ANY /{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.backend.id}"
+}
+
+resource "aws_apigatewayv2_stage" "backend" {
+  api_id      = aws_apigatewayv2_api.backend.id
+  name        = "$default"
+  auto_deploy = true
+}
+
+resource "aws_lambda_permission" "backend_api" {
+  statement_id  = "AllowApiGatewayBackend"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.backend_api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.backend.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "webhook_api" {
+  statement_id  = "AllowApiGatewayWebhook"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.webhook_ingest.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.backend.execution_arn}/*/*"
+}
+
+resource "aws_vpc_endpoint" "sqs" {
+  vpc_id              = module.vpc.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.sqs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.vpc.private_subnets
+  private_dns_enabled = true
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
 }

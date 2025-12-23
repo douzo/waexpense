@@ -2,6 +2,9 @@ aws_region  = "us-east-1"
 project     = "waexpense"
 environment = "prod"
 
+# Keep NAT off for low-cost serverless setup
+enable_nat_gateway = false
+
 db_username = "waexpense"
 db_password = "change-me"
 db_name     = "waexpense"
@@ -9,13 +12,14 @@ db_name     = "waexpense"
 whatsapp_phone_number_id = "123456789"
 external_text_parser_url = "https://example.com/parser"
 
-# Enable HTTPS on the ALB (requires an ACM certificate in the same region)
-enable_https        = true
-acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abcd-1234-efgh-5678"
+# Backend Lambda image (push to ECR and set the full URI)
+backend_lambda_image  = "716293474703.dkr.ecr.us-east-1.amazonaws.com/waexpense-prod-backend:latest"
+backend_lambda_memory = 512
+backend_lambda_timeout = 30
 
-# Enable ALB access logs to S3
-enable_alb_access_logs = true
-alb_log_bucket_name    = "waexpense-prod-alb-logs"
+# Queues
+inbound_queue_name  = "inbound"
+outbound_queue_name = "outbound"
 
 # Provide the ARNs of SecureString SSM parameters for secrets.
 # Example:
@@ -33,3 +37,17 @@ plain_env_overrides = {
   APP_NAME = "WA Expense Tracker"
   DEBUG    = "false"
 }
+
+# Text parser Lambda
+lambda_text_parser_name      = "waexpense-text-parser"
+lambda_text_parser_role_name = "waexpense-text-parser-role"
+lambda_text_parser_memory    = 256
+lambda_text_parser_timeout   = 20
+lambda_text_parser_env       = {}
+
+# Bedrock access for Lambda (restrict to your model ARNs if possible)
+enable_bedrock_policy = true
+bedrock_model_arns    = ["*"]
+
+# API Gateway in front of the Lambda
+enable_text_parser_api = true

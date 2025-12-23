@@ -133,9 +133,11 @@ async def _handle_message(db: Session, message: Dict[str, Any], contacts: List[D
     if msg_type == "text":
         await _handle_text_message(db, user, message)
     else:
-        await whatsapp_service.send_text_message(
-            wa_id, "Thanks! Image and other message types will be supported soon."
-        )
+        from app.services.queue import enqueue_outbound_text
+
+        fallback = "Thanks! Image and other message types will be supported soon."
+        if not enqueue_outbound_text(wa_id, fallback):
+            await whatsapp_service.send_text_message(wa_id, fallback)
 
 
 def _extract_text_body(message: Dict[str, Any]) -> str:
@@ -173,5 +175,7 @@ async def _handle_text_message(db: Session, user: User, message: Dict[str, Any])
         f"Recorded expense: {expense.amount} {expense.currency}"
         f" for {expense.merchant or 'your expense'} on {expense.expense_date}."
     )
-    await whatsapp_service.send_text_message(user.whatsapp_id, confirmation)
+    from app.services.queue import enqueue_outbound_text
 
+    if not enqueue_outbound_text(user.whatsapp_id, confirmation):
+        await whatsapp_service.send_text_message(user.whatsapp_id, confirmation)

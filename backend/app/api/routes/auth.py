@@ -72,13 +72,13 @@ async def request_login_code(body: RequestCodeBody, db: Session = Depends(get_db
     db.add(token)
     db.commit()
 
-    # Send code via WhatsApp
+    # Send code via SQS if configured; fallback to direct WhatsApp send.
+    from app.services.queue import enqueue_outbound_text
     from app.services.whatsapp import whatsapp_service
 
-    await whatsapp_service.send_text_message(
-        user.whatsapp_id,
-        f"Your login code for WA Expense Tracker is: {code}",
-    )
+    message = f"Your login code for WA Expense Tracker is: {code}"
+    if not enqueue_outbound_text(user.whatsapp_id, message):
+        await whatsapp_service.send_text_message(user.whatsapp_id, message)
 
     logger.info("Login code generated for user %s", user.id)
     return {"status": "ok"}
@@ -121,5 +121,4 @@ async def verify_login_code(body: VerifyCodeBody, db: Session = Depends(get_db))
 
     access_token = _create_jwt(str(user.id))
     return TokenResponse(access_token=access_token)
-
 
