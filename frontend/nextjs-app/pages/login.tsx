@@ -73,6 +73,7 @@ export default function Login() {
       const data = await res.json();
       if (typeof window !== "undefined") {
         localStorage.setItem("wa_token", data.access_token);
+        localStorage.setItem("wa_refresh_token", data.refresh_token);
         window.location.href = "/";
       }
     } catch (err: any) {
@@ -377,4 +378,3 @@ export default function Login() {
     </main>
   );
 }
-

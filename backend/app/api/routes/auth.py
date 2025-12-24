@@ -1,5 +1,7 @@
+import hashlib
 import logging
 import random
+import secrets
 import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -11,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db import get_db
-from app.models import LoginToken, User
+from app.models import LoginToken, RefreshToken, User
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,8 @@ class VerifyCodeBody(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
+    expires_in: int
     token_type: str = "bearer"
 
 
@@ -39,10 +43,27 @@ def _generate_code(length: int = 6) -> str:
 def _create_jwt(user_id: str) -> str:
     payload = {
         "sub": str(user_id),
-        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+        "exp": datetime.now(timezone.utc)
+        + timedelta(minutes=settings.access_token_expiry_minutes),
+        "type": "access",
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
+def _hash_refresh_token(token: str) -> str:
+    return hashlib.sha256((settings.jwt_secret_key + token).encode()).hexdigest()
+
+
+def _create_refresh_token(user_id: str, db: Session) -> str:
+    raw = secrets.token_urlsafe(32)
+    token = RefreshToken(
+        user_id=user_id,
+        token_hash=_hash_refresh_token(raw),
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(days=settings.refresh_token_expiry_days),
+    )
+    db.add(token)
+    db.commit()
+    return raw
 
 @router.post("/request-code")
 async def request_login_code(body: RequestCodeBody, db: Session = Depends(get_db)) -> dict:
@@ -120,5 +141,54 @@ async def verify_login_code(body: VerifyCodeBody, db: Session = Depends(get_db))
     db.commit()
 
     access_token = _create_jwt(str(user.id))
-    return TokenResponse(access_token=access_token)
+    refresh_token = _create_refresh_token(user.id, db)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=settings.access_token_expiry_minutes * 60,
+    )
 
+
+class RefreshTokenBody(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_tokens(body: RefreshTokenBody, db: Session = Depends(get_db)):
+    token_hash = _hash_refresh_token(body.refresh_token)
+    now = datetime.now(timezone.utc)
+    stored: Optional[RefreshToken] = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked.is_(False),
+            RefreshToken.expires_at > now,
+        )
+        .first()
+    )
+
+    if not stored:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    stored.revoked = True
+    db.commit()
+
+    access_token = _create_jwt(str(stored.user_id))
+    refresh_token = _create_refresh_token(stored.user_id, db)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=settings.access_token_expiry_minutes * 60,
+    )
+
+
+@router.post("/logout")
+async def logout(body: RefreshTokenBody, db: Session = Depends(get_db)):
+    token_hash = _hash_refresh_token(body.refresh_token)
+    stored: Optional[RefreshToken] = (
+        db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+    )
+    if stored and not stored.revoked:
+        stored.revoked = True
+        db.commit()
+    return {"status": "ok"}

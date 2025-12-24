@@ -24,6 +24,8 @@ WHATSAPP_VERIFY_TOKEN="dev-verify-token"    # used for webhook verification GET
 WHATSAPP_APP_SECRET="app-secret"            # used for X-Hub-Signature-256 verification
 WHATSAPP_ACCESS_TOKEN="your-wa-access-token"
 WHATSAPP_PHONE_NUMBER_ID="your-wa-phone-id"
+ACCESS_TOKEN_EXPIRY_MINUTES=15
+REFRESH_TOKEN_EXPIRY_DAYS=30
 ```
 
 ### 3) Install deps
@@ -43,6 +45,9 @@ Server: http://127.0.0.1:8000
 ### 5) Smoke tests (local)
 - Health: `curl http://127.0.0.1:8000/health`
 - Expenses stub: `curl http://127.0.0.1:8000/api/expenses`
+- Refresh token: `curl -X POST http://127.0.0.1:8000/auth/refresh -H "Content-Type: application/json" -d '{"refresh_token":"..."}'`
+- Update expense: `curl -X PATCH http://127.0.0.1:8000/api/expenses/<id> -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"amount":12.5,"currency":"USD"}'`
+- Dev seed: `curl -X POST http://127.0.0.1:8000/api/dev/seed -H "Content-Type: application/json" -d '{"whatsapp_id":"15551234567"}'` (debug only)
 
 ### 6) Simulate a WhatsApp text webhook (no signature)
 Run while the server is up:
@@ -138,6 +143,10 @@ Example test messages:
 - Or hit the API: `curl http://127.0.0.1:8000/api/expenses`
 - You should see the expense you just sent via WhatsApp!
 
+## Auth Notes
+- Login returns **access + refresh tokens**. Access tokens are short-lived; refresh tokens rotate on `/auth/refresh`.
+- `/auth/logout` revokes a refresh token server-side.
+
 ### Troubleshooting
 
 - **Webhook verification fails**: Ensure `WHATSAPP_VERIFY_TOKEN` matches exactly in both `.env` and Meta console
@@ -158,7 +167,7 @@ Example test messages:
   # optionally set NEXT_PUBLIC_API_BASE (defaults to http://127.0.0.1:8000)
   NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000 npm run dev
   ```
-- Access: http://localhost:3000 — page pulls from backend `/api/expenses` (currently dummy data).
+- Access: http://localhost:3000 — page pulls from backend `/api/expenses` and supports inline edits.
 - If your backend is not on `http://127.0.0.1:8000`, set an env in Next.js (e.g., `NEXT_PUBLIC_API_BASE=http://your-host:8000`) and use it in fetch calls once wired.
 
 ## Notes / Roadmap

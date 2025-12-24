@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 interface Expense {
   id: string;
@@ -7,6 +7,7 @@ interface Expense {
   currency: string;
   category: string;
   expense_date: string;
+  notes?: string | null;
 }
 
 export default function Home() {
@@ -14,6 +15,15 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Expense | null>(null);
+  const [editForm, setEditForm] = useState({
+    amount: "",
+    currency: "",
+    category: "",
+    merchant: "",
+    notes: "",
+    expense_date: "",
+  });
 
   useEffect(() => {
     async function fetchExpenses() {
@@ -36,10 +46,23 @@ export default function Home() {
           },
         });
         if (res.status === 401) {
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("wa_token");
-            window.location.href = "/login";
+          const refreshed = await refreshAccessToken();
+          if (!refreshed) {
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("wa_token");
+              localStorage.removeItem("wa_refresh_token");
+              window.location.href = "/login";
+            }
+            return;
           }
+          const retry = await fetch(`${apiBase}/api/expenses`, {
+            headers: {
+              Authorization: `Bearer ${refreshed}`,
+            },
+          });
+          if (!retry.ok) throw new Error("Failed to load expenses");
+          const data = await retry.json();
+          setExpenses(data.items);
           return;
         }
         if (!res.ok) throw new Error("Failed to load expenses");
@@ -55,6 +78,104 @@ export default function Home() {
 
     fetchExpenses();
   }, []);
+
+  const refreshAccessToken = async (): Promise<string | null> => {
+    const refreshToken =
+      typeof window !== "undefined"
+        ? localStorage.getItem("wa_refresh_token")
+        : null;
+    if (!refreshToken) return null;
+    try {
+      const res = await fetch(`${apiBase}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (typeof window !== "undefined") {
+        localStorage.setItem("wa_token", data.access_token);
+        localStorage.setItem("wa_refresh_token", data.refresh_token);
+      }
+      return data.access_token;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  };
+
+  const startEdit = (expense: Expense) => {
+    setEditing(expense);
+    setEditForm({
+      amount: expense.amount.toString(),
+      currency: expense.currency || "USD",
+      category: expense.category || "",
+      merchant: expense.merchant || "",
+      notes: expense.notes || "",
+      expense_date: expense.expense_date
+        ? expense.expense_date.slice(0, 10)
+        : "",
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+  };
+
+  const handleSaveEdit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    try {
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("wa_token")
+          : null;
+      const payload = {
+        amount: Number(editForm.amount),
+        currency: editForm.currency,
+        category: editForm.category || null,
+        merchant: editForm.merchant || null,
+        notes: editForm.notes || null,
+        expense_date: editForm.expense_date,
+      };
+      const res = await fetch(`${apiBase}/api/expenses/${editing.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 401) {
+        const refreshed = await refreshAccessToken();
+        if (!refreshed) throw new Error("Unauthorized");
+        const retry = await fetch(`${apiBase}/api/expenses/${editing.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${refreshed}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        if (!retry.ok) throw new Error("Failed to update expense");
+        const updated = await retry.json();
+        setExpenses((prev) =>
+          prev.map((item) => (item.id === editing.id ? updated : item))
+        );
+        setEditing(null);
+        return;
+      }
+      if (!res.ok) throw new Error("Failed to update expense");
+      const updated = await res.json();
+      setExpenses((prev) =>
+        prev.map((item) => (item.id === editing.id ? updated : item))
+      );
+      setEditing(null);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to update expense");
+    }
+  };
 
   const summary = useMemo(() => {
     if (!expenses.length) {
@@ -158,6 +279,7 @@ export default function Home() {
                     <th>Merchant</th>
                     <th>Category</th>
                     <th className="right">Amount</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -169,6 +291,14 @@ export default function Home() {
                       <td className="right">
                         {formatAmount(expense.amount, expense.currency)}
                       </td>
+                      <td className="right">
+                        <button
+                          className="link-btn"
+                          onClick={() => startEdit(expense)}
+                        >
+                          Edit
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -176,6 +306,95 @@ export default function Home() {
             </div>
           )}
         </section>
+
+        {editing && (
+          <section className="edit-panel">
+            <div className="edit-header">
+              <div>
+                <p>Edit expense</p>
+                <span>{editing.merchant || "Expense"}</span>
+              </div>
+              <button className="ghost-btn" onClick={cancelEdit}>
+                Close
+              </button>
+            </div>
+            <form className="edit-form" onSubmit={handleSaveEdit}>
+              <label>
+                Amount
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.amount}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, amount: e.target.value }))
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Currency
+                <input
+                  type="text"
+                  value={editForm.currency}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, currency: e.target.value }))
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Category
+                <input
+                  type="text"
+                  value={editForm.category}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, category: e.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Merchant
+                <input
+                  type="text"
+                  value={editForm.merchant}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, merchant: e.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Date
+                <input
+                  type="date"
+                  value={editForm.expense_date}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      expense_date: e.target.value,
+                    }))
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Notes
+                <textarea
+                  rows={3}
+                  value={editForm.notes}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                />
+              </label>
+              <div className="edit-actions">
+                <button type="button" className="ghost-btn" onClick={cancelEdit}>
+                  Cancel
+                </button>
+                <button type="submit">Save changes</button>
+              </div>
+            </form>
+          </section>
+        )}
       </div>
 
       <style jsx>{`
@@ -333,6 +552,71 @@ export default function Home() {
         td.right,
         th.right {
           text-align: right;
+        }
+
+        .link-btn {
+          border: none;
+          background: transparent;
+          color: #1d4ed8;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .edit-panel {
+          margin-top: 2rem;
+          background: #0f172a;
+          color: #e2e8f0;
+          border-radius: 22px;
+          padding: 2rem;
+        }
+
+        .edit-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 1.5rem;
+        }
+
+        .edit-header p {
+          margin: 0;
+          font-weight: 600;
+        }
+
+        .edit-header span {
+          display: block;
+          color: #94a3b8;
+          margin-top: 0.35rem;
+        }
+
+        .edit-form {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 1rem;
+        }
+
+        .edit-form label {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          font-weight: 600;
+          font-size: 0.9rem;
+        }
+
+        .edit-form input,
+        .edit-form textarea {
+          border-radius: 12px;
+          border: 1px solid rgba(148, 163, 184, 0.35);
+          padding: 0.65rem 0.75rem;
+          background: rgba(15, 23, 42, 0.6);
+          color: #e2e8f0;
+        }
+
+        .edit-actions {
+          grid-column: 1 / -1;
+          display: flex;
+          justify-content: flex-end;
+          gap: 0.75rem;
+          margin-top: 0.5rem;
         }
 
         tr:last-child td {

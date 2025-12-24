@@ -1,4 +1,5 @@
 import logging
+from datetime import date
 from typing import Any, Dict, Optional
 
 import httpx
@@ -8,7 +9,9 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-async def call_external_text_parser(message: str) -> Optional[Dict[str, Any]]:
+async def call_external_text_parser(
+    message: str, reference_date: Optional[date] = None
+) -> Optional[Dict[str, Any]]:
     """
     Optional integration point for an external text parser service.
 
@@ -29,7 +32,9 @@ async def call_external_text_parser(message: str) -> Optional[Dict[str, Any]]:
     if not settings.external_text_parser_url:
         return None
 
-    payload = {"text": message}
+    payload: Dict[str, Any] = {"text": message}
+    if reference_date:
+        payload["reference_date"] = reference_date.isoformat()
     headers: Dict[str, str] = {"Content-Type": "application/json"}
     if settings.external_text_parser_api_key:
         headers["Authorization"] = f"Bearer {settings.external_text_parser_api_key}"
@@ -54,5 +59,4 @@ async def call_external_text_parser(message: str) -> Optional[Dict[str, Any]]:
         return None
 
     return data
-
 

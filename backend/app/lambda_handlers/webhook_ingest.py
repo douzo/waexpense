@@ -2,7 +2,7 @@ import asyncio
 import base64
 import json
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -23,7 +23,9 @@ def _extract_text_body(message: Dict[str, Any]) -> str:
     return text_obj.get("body", "").strip()
 
 
-def _normalize_parsed(parsed: Dict[str, Any], original_text: str) -> Dict[str, Any]:
+def _normalize_parsed(
+    parsed: Dict[str, Any], original_text: str, reference_date: Optional[date]
+) -> Dict[str, Any]:
     amount = parsed.get("amount")
     if isinstance(amount, Decimal):
         amount = float(amount)
@@ -32,7 +34,7 @@ def _normalize_parsed(parsed: Dict[str, Any], original_text: str) -> Dict[str, A
     if isinstance(expense_date, date):
         expense_date = expense_date.isoformat()
     elif expense_date is None:
-        expense_date = date.today().isoformat()
+        expense_date = (reference_date or date.today()).isoformat()
 
     return {
         "amount": amount,
@@ -65,6 +67,16 @@ def _handle_webhook_payload(
     return {"statusCode": 200, "body": json.dumps({"status": "received"})}
 
 
+def _message_reference_date(message: Dict[str, Any]) -> Optional[date]:
+    timestamp = message.get("timestamp")
+    if not timestamp:
+        return None
+    try:
+        return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).date()
+    except (ValueError, TypeError):
+        return None
+
+
 def _handle_message(message: Dict[str, Any], contacts: List[Dict[str, Any]]):
     msg_type = message.get("type")
     wa_id = message.get("from") or (contacts[0].get("wa_id") if contacts else None)
@@ -80,8 +92,9 @@ def _handle_message(message: Dict[str, Any], contacts: List[Dict[str, Any]]):
         return
 
     body = _extract_text_body(message)
-    parsed = _run_async(parse_expense_text(body))
-    normalized = _normalize_parsed(parsed, body)
+    reference_date = _message_reference_date(message)
+    parsed = _run_async(parse_expense_text(body, reference_date=reference_date))
+    normalized = _normalize_parsed(parsed, body, reference_date)
 
     payload = {"type": "expense", "wa_id": wa_id, "expense": normalized}
     enqueue_inbound(payload)

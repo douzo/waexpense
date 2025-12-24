@@ -75,7 +75,11 @@ def lambda_handler(event, context):
     if not text:
         return {"statusCode": 400, "body": json.dumps({"error": "Missing 'text'"})}
 
-    today = date.today().isoformat()
+    reference_date = body.get("reference_date")
+    if isinstance(reference_date, str):
+        today = reference_date
+    else:
+        today = date.today().isoformat()
 
     prompt = f"""
 You are an expense extraction engine.

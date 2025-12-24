@@ -1,4 +1,5 @@
 import logging
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -114,6 +115,16 @@ async def handle_webhook(
 
 
 
+def _message_reference_date(message: Dict[str, Any]) -> Optional[date]:
+    timestamp = message.get("timestamp")
+    if not timestamp:
+        return None
+    try:
+        return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).date()
+    except (ValueError, TypeError):
+        return None
+
+
 async def _handle_message(db: Session, message: Dict[str, Any], contacts: List[Dict[str, Any]]):
     msg_type = message.get("type")
     # Meta sends wa_id in message["from"] field, fallback to contacts if available
@@ -131,7 +142,8 @@ async def _handle_message(db: Session, message: Dict[str, Any], contacts: List[D
         db.refresh(user)
 
     if msg_type == "text":
-        await _handle_text_message(db, user, message)
+        reference_date = _message_reference_date(message)
+        await _handle_text_message(db, user, message, reference_date)
     else:
         from app.services.queue import enqueue_outbound_text
 
@@ -145,9 +157,11 @@ def _extract_text_body(message: Dict[str, Any]) -> str:
     return text_obj.get("body", "").strip()
 
 
-async def _handle_text_message(db: Session, user: User, message: Dict[str, Any]):
+async def _handle_text_message(
+    db: Session, user: User, message: Dict[str, Any], reference_date: Optional[date]
+):
     body = _extract_text_body(message)
-    parsed = await parse_expense_text(body)
+    parsed = await parse_expense_text(body, reference_date=reference_date)
 
     if not parsed["amount"]:
         logger.info("No amount found in message '%s'; skipping expense creation", body)

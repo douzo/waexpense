@@ -19,7 +19,9 @@ CATEGORY_KEYWORDS = {
 }
 
 
-async def parse_expense_text(message: str) -> Dict[str, Any]:
+async def parse_expense_text(
+    message: str, reference_date: Optional[date] = None
+) -> Dict[str, Any]:
     """
     Parse a free-form expense text into structured fields.
 
@@ -27,7 +29,7 @@ async def parse_expense_text(message: str) -> Dict[str, Any]:
     1. Try external text parser (AWS / GCP / custom) if configured.
     2. Fallback to local regex-based heuristic parser.
     """
-    external = await call_external_text_parser(message)
+    external = await call_external_text_parser(message, reference_date=reference_date)
     if external:
         # Normalize external response types
 
@@ -46,10 +48,10 @@ async def parse_expense_text(message: str) -> Dict[str, Any]:
 
         return external
 
-    return _parse_local(message)
+    return _parse_local(message, reference_date=reference_date)
 
 
-def _parse_local(message: str) -> Dict[str, Any]:
+def _parse_local(message: str, reference_date: Optional[date] = None) -> Dict[str, Any]:
     lowered = message.lower()
 
     currency_match = re.search(CURRENCY_PATTERN, message)
@@ -80,7 +82,7 @@ def _parse_local(message: str) -> Dict[str, Any]:
     return {
         "amount": amount,
         "currency": currency or "USD",
-        "expense_date": parsed_date or date.today(),
+        "expense_date": parsed_date or reference_date or date.today(),
         "category": category or "general",
         "merchant": merchant,
         "notes": message,
