@@ -6,27 +6,27 @@
 !includeurl AWSPUML/Compute/Lambda.puml
 !includeurl AWSPUML/Database/RDS.puml
 !includeurl AWSPUML/ApplicationIntegration/SimpleQueueService.puml
-!includeurl AWSPUML/CustomerEngagement/SimpleNotificationService.puml
-!includeurl AWSPUML/MachineLearning/Bedrock.puml
+!includeurl AWSPUML/ApplicationIntegration/SimpleNotificationService.puml
+!includeurl AWSPUML/ArtificialIntelligence/Bedrock.puml
 !includeurl AWSPUML/ApplicationIntegration/EventBridge.puml
 !includeurl AWSPUML/SecurityIdentityCompliance/SecretsManager.puml
 !includeurl AWSPUML/Storage/SimpleStorageService.puml
 !includeurl AWSPUML/NetworkingContentDelivery/CloudFront.puml
 
-Users(user, "User")
-APIGateway(api_webhook, "API Gateway /webhook")
-APIGateway(api_backend, "API Gateway /api")
-Lambda(webhook_lambda, "Webhook Lambda (public)")
-Lambda(worker_lambda, "Worker Lambda (VPC)")
-Lambda(outbound_lambda, "Outbound Lambda (public)")
-Lambda(api_lambda, "API Lambda (VPC)")
-SimpleQueueService(sqs_in, "SQS Inbound")
-SimpleQueueService(sqs_out, "SQS Outbound")
-RDS(rds, "PostgreSQL RDS")
-Bedrock(bedrock, "Bedrock (Mistral)")
-Lambda(parser_lambda, "Text Parser Lambda")
-CloudFront(cf, "CloudFront")
-SimpleStorageService(s3, "S3 Static Site")
+Users(user, "","User")
+APIGateway(api_webhook, "", "API Gateway /webhook")
+APIGateway(api_backend, "", "API Gateway /api")
+Lambda(webhook_lambda, "", "Webhook Lambda (public)")
+Lambda(worker_lambda, "", "Worker Lambda (VPC)")
+Lambda(outbound_lambda, "", "Outbound Lambda (public)")
+Lambda(api_lambda, "", "API Lambda (VPC)")
+SimpleQueueService(sqs_in,"",  "SQS Inbound")
+SimpleQueueService(sqs_out, "", "SQS Outbound")
+RDS(rds, "", "PostgreSQL RDS")
+Bedrock(bedrock, "", "Bedrock (Mistral)")
+Lambda(parser_lambda, "", "Text Parser Lambda")
+CloudFront(cf, "", "CloudFront")
+SimpleStorageService(s3,"",  "S3 Static Site")
 
 user --> api_webhook
 api_webhook --> webhook_lambda
