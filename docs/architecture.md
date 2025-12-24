@@ -2,26 +2,48 @@
 
 ## Requirements & Status
 - [x] FastAPI app scaffold with `/health` and `/webhook` routes.
-- [x] Text message handling: parse free-form text, create expenses, send confirmation via WhatsApp client stub.
-- [x] SQLAlchemy models: `users`, `expenses`, `receipts`; SQLite fallback for local boot.
-- [x] Basic WhatsApp client stub (send text, signature verification placeholder).
+- [x] Text message handling: parse free-form text, create expenses, send confirmation.
+- [x] SQLAlchemy models: `users`, `expenses`, `receipts`.
+- [x] WhatsApp client (signature verification + send message).
+- [x] Serverless deployment path (API Gateway + Lambda + SQS + RDS).
+- [x] Frontend dashboard: login + list expenses.
 - [ ] Image handling: download media via WhatsApp Cloud API, store to S3, create `receipts` row, enqueue OCR job.
-- [ ] OCR worker: consume queue, run Google Vision, parse totals/date/merchant, update receipts/expenses, notify user.
-- [ ] Auth for web dashboard (email+password or phone+OTP).
-- [ ] Frontend dashboard: login, list/filter expenses, view details + receipt image, edit category/notes/amount, monthly/category reports.
-- [ ] Alembic migrations and production DB config (Postgres).
-- [ ] Background queue (Redis + RQ/Celery) wiring for OCR jobs.
-- [ ] Deployment/Docker: containerize API + worker; Postgres/Redis services; env-driven config.
+- [ ] OCR worker: consume queue, run OCR, update receipts/expenses, notify user.
+- [ ] Alembic migrations and production DB hardening.
 
-## Backend (FastAPI)
-- Webhook at `/webhook` handles WhatsApp Cloud API callbacks; text flow is implemented.
-- Text is parsed into expense metadata using regex-based heuristics.
-- Planned: image flow (media download -> S3 -> OCR queue) and worker processing.
+## Backend (Serverless FastAPI + Workers)
+- **API Lambda (VPC)** runs FastAPI via Mangum for dashboard endpoints and auth.
+- **Webhook Lambda (public)** receives WhatsApp callbacks and enqueues parsed payloads into SQS.
+- **Worker Lambda (VPC)** consumes SQS and writes to RDS.
+- **Outbound Lambda (public)** consumes outbound SQS messages and calls WhatsApp API.
+- Text parsing prefers external parser (Bedrock-based Lambda via API Gateway) with regex fallback.
 
 ## Frontend (Next.js)
-- Minimal landing page calls `/api/expenses` (dummy data).
-- Planned: authenticated dashboard for filtering/editing expenses and viewing receipts/reports.
+- Static export deployed to S3 (optionally behind CloudFront).
+- Calls API Gateway endpoint (configured via `NEXT_PUBLIC_API_BASE`).
 
 ## Data Storage
-- SQLAlchemy models for `users`, `expenses`, and `receipts` map to PostgreSQL tables.
-- SQLite fallback used locally for quick bootstrapping; migrations to be added later.
+- PostgreSQL (RDS) in private subnets.
+- SQS queues for inbound/outbound message flow.
+- S3 for static frontend and receipt storage (future image flow).
+
+## Architecture Diagram
+```mermaid
+flowchart LR
+  User[User on WhatsApp] --> WA[WhatsApp Cloud API]
+  WA --> APIGW[API Gateway /webhook]
+  APIGW --> WebhookLambda[Webhook Lambda (public)]
+  WebhookLambda --> SQSIn[SQS Inbound]
+  SQSIn --> WorkerLambda[Worker Lambda (VPC)]
+  WorkerLambda --> RDS[(PostgreSQL RDS)]
+  WorkerLambda --> SQSOut[SQS Outbound]
+  SQSOut --> OutboundLambda[Outbound Lambda (public)]
+  OutboundLambda --> WA
+
+  Browser[Web Dashboard] --> ApiGwBackend[API Gateway /api]
+  ApiGwBackend --> ApiLambda[API Lambda (VPC)]
+  ApiLambda --> RDS
+
+  WebhookLambda --> ParserApi[Text Parser API (Lambda)]
+  ParserApi --> Bedrock[Bedrock (Mistral)]
+```

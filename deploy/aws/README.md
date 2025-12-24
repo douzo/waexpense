@@ -8,20 +8,21 @@ This document describes a fully automated path to deploy the WhatsApp Expense Tr
 
 | Component | AWS Service | Notes |
 |-----------|-------------|-------|
-| FastAPI backend | ECS Fargate (behind an Application Load Balancer) | Container image stored in ECR. Auto scaled and logs shipped to CloudWatch. |
+| FastAPI backend | API Gateway + Lambda (container image) | Mangum adapter, VPC-attached for RDS access. |
 | PostgreSQL database | Amazon RDS | Single-AZ for MVP, provisioned inside private subnets. |
-| Frontend (Next.js) | S3 static hosting + CloudFront CDN *(or ECS container if you prefer SSR)* | This guide assumes static hosting; the provided Dockerfile still supports containerized runtime for flexibility. |
+| Frontend (Next.js) | S3 static hosting + CloudFront CDN *(or Lambda/SSR if needed)* | This guide assumes static hosting; the provided Dockerfile still supports containerized runtime for flexibility. |
 | Object storage | S3 receipts bucket | Stores uploaded receipt images. |
-| Secrets | AWS Systems Manager Parameter Store (SecureString) | Referenced from ECS task definitions. |
-| Observability | CloudWatch Logs + standard AWS metrics | Container logs available under `/aws/ecs/<cluster>`. |
+| Messaging | SQS inbound/outbound queues | Webhook ingestion and WhatsApp outbound delivery. |
+| Secrets | AWS Systems Manager Parameter Store (SecureString) | Referenced by Lambda environment variables. |
+| Observability | CloudWatch Logs + standard AWS metrics | Lambda log groups per function. |
 
-All resources live inside a dedicated VPC with public subnets (for ALB/NAT) and private subnets (for ECS/RDS). Terraform automates the network layout, security groups, ECS, RDS, S3, and IAM roles.
+All resources live inside a dedicated VPC with public and private subnets. Terraform automates the network layout, security groups, RDS, S3, Lambda, API Gateway, SQS, and IAM roles.
 
 ---
 
 ## 2. Prerequisites
 
-1. **AWS account + IAM user/role** with permissions for VPC, ECS, IAM, RDS, S3, CloudWatch, Parameter Store, and CloudFront.
+1. **AWS account + IAM user/role** with permissions for VPC, IAM, RDS, S3, CloudWatch, Parameter Store, API Gateway, Lambda, and CloudFront.
 2. **Tools installed locally or in CI**: `awscli v2`, `terraform >= 1.5`, `docker`, `npm`, and `python3`.
 3. **Container Registry**: Terraform creates ECR repositories, but you must authenticate (`aws ecr get-login-password`) before pushing images.
 4. **Secrets in Parameter Store**: create SecureString parameters for each sensitive env (JWT secret, WhatsApp tokens, parser API key, etc.). Example:
@@ -41,11 +42,11 @@ All resources live inside a dedicated VPC with public subnets (for ALB/NAT) and 
 The Terraform stack lives in `deploy/aws/terraform`. It provisions:
 
 - VPC, subnets, NAT, and security groups.
-- ECS cluster + Fargate service for the backend API.
+- API Gateway + Lambda functions for the backend API and workers.
 - RDS PostgreSQL instance (single AZ).
 - S3 buckets for the static frontend and receipt storage.
 - ECR repositories for backend & frontend images.
-- CloudWatch log groups.
+- SQS queues and CloudWatch log groups.
 
 ### Usage
 
@@ -60,7 +61,7 @@ terraform apply
 
 Key outputs:
 
-- `alb_dns_name`: public URL for the API.
+- `backend_api_endpoint`: API Gateway URL for the backend.
 - `frontend_bucket`: S3 bucket to upload the Next.js build artifacts.
 - `receipts_bucket`: bucket for receipt uploads.
 - `ecr_backend_repo` / `ecr_frontend_repo`: URIs to push Docker images.
@@ -72,6 +73,7 @@ Key outputs:
 Two Dockerfiles were added:
 
 - `backend/Dockerfile`: builds the FastAPI service.
+- `backend/Dockerfile.lambda`: builds the Lambda container image.
 - `frontend/nextjs-app/Dockerfile`: builds the production-ready Next.js app (useful for SSR deployments or preview environments).
 
 For the recommended S3 + CloudFront flow, run:
@@ -96,7 +98,7 @@ Two GitHub Actions workflows (see `.github/workflows`) automate deployments:
 1. **`deploy-backend.yml`**
    - Triggers on pushes to `main` touching `backend/**`.
    - Builds and pushes the backend image to ECR.
-   - Updates the running ECS service to pull the new tag (via `aws ecs update-service --force-new-deployment`).
+   - Updates the Lambda functions to the new image.
 
 2. **`deploy-frontend.yml`**
    - Triggers on pushes to `main` touching `frontend/**`.
@@ -122,9 +124,9 @@ Configure repository secrets (Settings → Secrets and variables → Actions):
 1. **Provision infra**: run Terraform once per environment (dev/stage/prod).
 2. **Seed parameters**: store all secrets in SSM Parameter Store and note their ARNs for Terraform variables.
 3. **Build & push images**: let GitHub Actions or your build server push to the Terraform-created ECR repositories.
-4. **Deploy backend**: ECS picks up the new image tag and refreshes containers.
+4. **Deploy backend**: update Lambda functions to the new image tag.
 5. **Deploy frontend**: export the Next.js build to S3 and invalidate CDN caches.
-6. **Rotate secrets**: update SSM parameters and redeploy ECS to pick up new values.
+6. **Rotate secrets**: update SSM parameters and redeploy Lambdas to pick up new values.
 
 Following this process ensures deployments are reproducible, reviewable, and require no manual clicking in the AWS console.
 
@@ -153,7 +155,7 @@ cp terraform.tfvars.example terraform.tfvars
 Edit `terraform.tfvars`:
 - Fill `aws_region`, `environment`, and DB credentials.
 - Add `secret_env_parameters` with the SSM ARNs.
-- (Optional) enable HTTPS and access logs if you have an ACM cert.
+- Configure `backend_lambda_image` and SQS queue names if needed.
 
 ### 4) Provision Infrastructure
 ```bash
@@ -161,31 +163,41 @@ terraform init
 terraform plan
 terraform apply
 ```
-Capture outputs: `alb_dns_name`, `ecr_backend_repo`, `frontend_bucket`.
+Capture outputs: `backend_api_endpoint`, `ecr_backend_repo`, `frontend_bucket`.
 
-### 5) Build + Push Backend Image
+### 5) Build + Push Backend Lambda Image
 ```bash
 cd ../../..
 BACKEND_REPO=<ecr_backend_repo_from_tf_output>
-docker build -f backend/Dockerfile -t $BACKEND_REPO:v1 .
+docker build -f backend/Dockerfile.lambda -t $BACKEND_REPO:v1 .
 docker tag $BACKEND_REPO:v1 $BACKEND_REPO:latest
 docker push $BACKEND_REPO:v1
 docker push $BACKEND_REPO:latest
 ```
 
-### 6) Deploy Backend to ECS
+### 6) Deploy Backend Lambdas
 ```bash
-aws ecs update-service \
-  --cluster waexpense-dev-cluster \
-  --service waexpense-dev-svc \
-  --force-new-deployment \
-  --region us-east-1
+aws lambda update-function-code \
+  --function-name waexpense-dev-api \
+  --image-uri $BACKEND_REPO:latest
+
+aws lambda update-function-code \
+  --function-name waexpense-dev-worker \
+  --image-uri $BACKEND_REPO:latest
+
+aws lambda update-function-code \
+  --function-name waexpense-dev-webhook \
+  --image-uri $BACKEND_REPO:latest
+
+aws lambda update-function-code \
+  --function-name waexpense-dev-outbound \
+  --image-uri $BACKEND_REPO:latest
 ```
 
 ### 7) Build + Export Frontend
 ```bash
 cd frontend/nextjs-app
-export NEXT_PUBLIC_API_BASE=http://<alb_dns_name>
+export NEXT_PUBLIC_API_BASE=<backend_api_endpoint>
 npm ci
 npm run build
 npm run export
@@ -198,7 +210,7 @@ aws s3 sync frontend/nextjs-app/out/ s3://<frontend_bucket>/ --delete
 
 ### 9) Validate
 ```bash
-curl http://<alb_dns_name>/health
+curl <backend_api_endpoint>/health
 ```
 Open the S3 website endpoint (or CloudFront URL) and verify login works.
 
@@ -215,8 +227,8 @@ Open the S3 website endpoint (or CloudFront URL) and verify login works.
   `terraform import aws_ecr_repository.frontend waexpense-dev-frontend`
 - **RDS engine version unavailable**: use a supported version in your region (e.g., `15.3` in us-east-1).
 
-### ECS + IAM / Secrets
-- **SSM AccessDenied during task start**: ECS uses the **execution role** to fetch secrets at startup. Grant `ssm:GetParameters` to the execution role (not just the task role).
+### Lambda + IAM / Secrets
+- **SSM AccessDenied during Lambda startup**: Lambda image requires ECR pull access and the Lambda role needs `ssm:GetParameters` if secrets are injected.
 - **Missing env var (e.g., `JWT_ALGORITHM`)**: SSM parameter names are case-sensitive; ensure your secret key name is uppercase and matches the env var.
 - **`psycopg2` missing**: add `psycopg2-binary` to `backend/requirements.txt`, rebuild and redeploy.
 
@@ -224,7 +236,7 @@ Open the S3 website endpoint (or CloudFront URL) and verify login works.
 - **Docker build fails to find `backend/app`**: run `docker build` from repo root so `backend/` is in context.
 - **`app.db` not found during build**: removed from Dockerfile since DB file isn’t tracked.
 - **Push fails with broken pipe**: network/proxy issue; retry or use another network/CI to push.
-- **`latest` tag missing**: tag `latest` in workflow so ECS pulls latest by default.
+- **`latest` tag missing**: tag `latest` in workflow so Lambda updates stay consistent.
 
 ### Frontend (Next.js → S3)
 - **`npm run export` missing**: add `"export": "next export"` to `package.json`.
@@ -234,5 +246,5 @@ Open the S3 website endpoint (or CloudFront URL) and verify login works.
 - **Sync error “Unknown options: /”**: `FRONTEND_BUCKET` secret empty; add guard and set secret.
 
 ### HTTPS + Webhook
-- **WhatsApp webhook verification fails**: requires HTTPS; ALB HTTP URL won’t pass. Use CloudFront default HTTPS domain or a custom domain + ACM cert.
-- **CloudFront default HTTPS**: set ALB as origin, allow all methods, caching disabled, use `https://<cloudfront-domain>/webhook`.
+- **WhatsApp webhook verification fails**: requires HTTPS; use CloudFront default HTTPS domain in front of API Gateway.
+- **CloudFront default HTTPS**: set API Gateway as origin, allow all methods, caching disabled, use `https://<cloudfront-domain>/webhook`.
