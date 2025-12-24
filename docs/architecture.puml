@@ -1,0 +1,49 @@
+@startuml
+!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/dist
+!includeurl AWSPUML/AWSCommon.puml
+!includeurl AWSPUML/General/Users.puml
+!includeurl AWSPUML/NetworkingAndContentDelivery/APIGateway.puml
+!includeurl AWSPUML/Compute/Lambda.puml
+!includeurl AWSPUML/Database/RDS.puml
+!includeurl AWSPUML/Integration/SimpleQueueService.puml
+!includeurl AWSPUML/CustomerEngagement/SimpleNotificationService.puml
+!includeurl AWSPUML/MachineLearning/Bedrock.puml
+!includeurl AWSPUML/ApplicationIntegration/EventBridge.puml
+!includeurl AWSPUML/SecurityIdentityCompliance/SecretsManager.puml
+!includeurl AWSPUML/Storage/SimpleStorageService.puml
+!includeurl AWSPUML/NetworkingAndContentDelivery/CloudFront.puml
+
+Users(user, "User")
+APIGateway(api_webhook, "API Gateway /webhook")
+APIGateway(api_backend, "API Gateway /api")
+Lambda(webhook_lambda, "Webhook Lambda (public)")
+Lambda(worker_lambda, "Worker Lambda (VPC)")
+Lambda(outbound_lambda, "Outbound Lambda (public)")
+Lambda(api_lambda, "API Lambda (VPC)")
+SimpleQueueService(sqs_in, "SQS Inbound")
+SimpleQueueService(sqs_out, "SQS Outbound")
+RDS(rds, "PostgreSQL RDS")
+Bedrock(bedrock, "Bedrock (Mistral)")
+Lambda(parser_lambda, "Text Parser Lambda")
+CloudFront(cf, "CloudFront")
+SimpleStorageService(s3, "S3 Static Site")
+
+user --> api_webhook
+api_webhook --> webhook_lambda
+webhook_lambda --> sqs_in
+sqs_in --> worker_lambda
+worker_lambda --> rds
+worker_lambda --> sqs_out
+sqs_out --> outbound_lambda
+outbound_lambda --> api_webhook
+
+cf --> s3
+user --> cf
+user --> api_backend
+api_backend --> api_lambda
+api_lambda --> rds
+
+webhook_lambda --> parser_lambda
+parser_lambda --> bedrock
+
+@enduml

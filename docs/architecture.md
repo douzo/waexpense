@@ -28,22 +28,5 @@
 - S3 for static frontend and receipt storage (future image flow).
 
 ## Architecture Diagram
-```mermaid
-flowchart LR
-  User[User on WhatsApp] --> WA[WhatsApp Cloud API]
-  WA --> APIGW[API Gateway /webhook]
-  APIGW --> WebhookLambda[Webhook Lambda (public)]
-  WebhookLambda --> SQSIn[SQS Inbound]
-  SQSIn --> WorkerLambda[Worker Lambda (VPC)]
-  WorkerLambda --> RDS[(PostgreSQL RDS)]
-  WorkerLambda --> SQSOut[SQS Outbound]
-  SQSOut --> OutboundLambda[Outbound Lambda (public)]
-  OutboundLambda --> WA
-
-  Browser[Web Dashboard] --> ApiGwBackend[API Gateway /api]
-  ApiGwBackend --> ApiLambda[API Lambda (VPC)]
-  ApiLambda --> RDS
-
-  WebhookLambda --> ParserApi[Text Parser API (Lambda)]
-  ParserApi --> Bedrock[Bedrock (Mistral)]
-```
+- Mermaid diagram: `docs/architecture.mmd`
+- AWS icon diagram (PlantUML): `docs/architecture.puml`
