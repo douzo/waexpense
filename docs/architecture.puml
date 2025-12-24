@@ -1,5 +1,5 @@
 @startuml
-!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/dist
+!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v20.0/dist
 !includeurl AWSPUML/AWSCommon.puml
 !includeurl AWSPUML/General/Users.puml
 !includeurl AWSPUML/NetworkingAndContentDelivery/APIGateway.puml
