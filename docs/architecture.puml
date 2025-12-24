@@ -2,16 +2,16 @@
 !define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v20.0/dist
 !includeurl AWSPUML/AWSCommon.puml
 !includeurl AWSPUML/General/Users.puml
-!includeurl AWSPUML/NetworkingAndContentDelivery/APIGateway.puml
+!includeurl AWSPUML/NetworkingContentDelivery/APIGateway.puml
 !includeurl AWSPUML/Compute/Lambda.puml
 !includeurl AWSPUML/Database/RDS.puml
-!includeurl AWSPUML/Integration/SimpleQueueService.puml
+!includeurl AWSPUML/ApplicationIntegration/SimpleQueueService.puml
 !includeurl AWSPUML/CustomerEngagement/SimpleNotificationService.puml
 !includeurl AWSPUML/MachineLearning/Bedrock.puml
 !includeurl AWSPUML/ApplicationIntegration/EventBridge.puml
 !includeurl AWSPUML/SecurityIdentityCompliance/SecretsManager.puml
 !includeurl AWSPUML/Storage/SimpleStorageService.puml
-!includeurl AWSPUML/NetworkingAndContentDelivery/CloudFront.puml
+!includeurl AWSPUML/NetworkingContentDelivery/CloudFront.puml
 
 Users(user, "User")
 APIGateway(api_webhook, "API Gateway /webhook")
