@@ -1,0 +1,405 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  background: #0f172a;
+  justify-content: center;
+  padding: 0;
+}
+
+.shell {
+  width: min(520px, 100%);
+  background: #fbfaf7;
+  border-radius: 0;
+  padding: 1.5rem 1.25rem 2rem;
+  box-shadow: none;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  position: relative;
+  flex-wrap: nowrap;
+}
+
+.toolbarTitle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.pageTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.monthLabel {
+  color: #6b7280;
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.iconButton {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.iconButton:hover {
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.menuButton {
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: #ffffff;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.menuButton:hover {
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ghostBtn {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.55rem 1rem;
+  border-radius: 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.primaryBtn {
+  border: none;
+  background: #f97316;
+  color: #ffffff;
+  padding: 0.65rem 1rem;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.summaryRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin: 1.5rem 0 1.25rem;
+  font-weight: 600;
+  align-items: center;
+  text-align: center;
+}
+
+.summaryRow p {
+  margin: 0;
+  color: #9aa3b2;
+  font-size: 0.78rem;
+}
+
+.summaryRow strong {
+  font-size: 1.15rem;
+}
+
+.listCard {
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 16px 35px rgba(15, 23, 42, 0.08);
+}
+
+.error {
+  color: #dc2626;
+  margin-bottom: 0.75rem;
+}
+
+.empty {
+  text-align: center;
+  color: #64748b;
+  padding: 2rem 0;
+}
+
+.linkBtn {
+  border: none;
+  background: transparent;
+  color: #1d4ed8;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dayGroup {
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 0.9rem 0;
+}
+
+.dayGroup:first-of-type {
+  border-top: none;
+}
+
+.dayHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+
+.dayNumber {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin-right: 0.75rem;
+}
+
+.dayDate {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.dayTotal {
+  color: #f97316;
+  font-weight: 700;
+}
+
+.expenseRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.expenseRow:first-of-type {
+  border-top: none;
+}
+
+.expenseTitle {
+  margin: 0;
+  font-weight: 600;
+}
+
+.expenseMeta {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  margin-top: 0.35rem;
+}
+
+.expenseActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.expenseAmount {
+  font-weight: 700;
+  color: #f97316;
+}
+
+.menuOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 20;
+}
+
+.menuDrawer {
+  width: min(360px, 90%);
+  background: #ffffff;
+  padding: 1.5rem;
+  border-radius: 18px 0 0 18px;
+  height: 100%;
+  box-shadow: -12px 0 30px rgba(15, 23, 42, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.menuHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.menuHeader p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.menuHeader span {
+  display: block;
+  color: #94a3b8;
+  margin-top: 0.35rem;
+}
+
+.menuForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.menuForm label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.menuForm input {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 0.65rem 0.75rem;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.menuSection p {
+  margin: 0 0 0.6rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.menuActions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.editSpacer {
+  width: 42px;
+}
+
+.editPanel {
+  margin-top: 1.5rem;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 22px;
+  padding: 1.5rem;
+  box-shadow: 0 16px 35px rgba(15, 23, 42, 0.12);
+}
+
+.editHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.editHeader p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.editHeader span {
+  display: block;
+  color: #6b7280;
+  margin-top: 0.35rem;
+}
+
+.editTabs {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.tabPill {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 0.4rem 1.1rem;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.tabPillActive {
+  border-color: #f97316;
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.editList {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.editRow {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.editRow span {
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.editList input {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 0.55rem 0.75rem;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.amountGroup {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 0.75rem;
+}
+
+.currencyInput {
+  text-transform: uppercase;
+}
+
+.editActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+@media (min-width: 900px) {
+  .shell {
+    width: min(980px, 100%);
+    padding: 2.5rem 2.25rem 2.5rem;
+  }
+
+  .summaryRow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    text-align: left;
+  }
+}
