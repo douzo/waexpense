@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(..., env="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(..., env="JWT_ALGORITHM")
     access_token_expiry_minutes: int = Field(15, env="ACCESS_TOKEN_EXPIRY_MINUTES")
-    refresh_token_expiry_days: int = Field(30, env="REFRESH_TOKEN_EXPIRY_DAYS")
+    refresh_token_expiry_days: int = Field(1, env="REFRESH_TOKEN_EXPIRY_DAYS")
     login_code_expiry_minutes: int = Field(10, env="LOGIN_CODE_EXPIRY_MINUTES")
 
     # Optional external text parser service (AWS/GCP, custom endpoint, etc.)

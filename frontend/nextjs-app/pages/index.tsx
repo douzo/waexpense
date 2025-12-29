@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EditExpensePanel } from "../components/EditExpensePanel";
 import { ExpenseList } from "../components/ExpenseList";
@@ -18,6 +18,7 @@ export default function Home() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileName, setProfileName] = useState("");
+  const lastListScroll = useRef<number | null>(null);
   const [editForm, setEditForm] = useState({
     amount: "",
     currency: "",
@@ -107,6 +108,21 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (editing) {
+      if (lastListScroll.current === null) {
+        lastListScroll.current = window.scrollY;
+      }
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    if (lastListScroll.current !== null) {
+      window.scrollTo({ top: lastListScroll.current, behavior: "auto" });
+      lastListScroll.current = null;
+    }
+  }, [editing]);
+
   const handleLogout = () => {
     if (typeof window !== "undefined") {
       clearTokens();
@@ -148,35 +164,44 @@ export default function Home() {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
-        <MonthHeader
-          monthLabel={monthLabel}
-          onPrev={() => shiftMonth(-1)}
-          onNext={() => shiftMonth(1)}
-          onMenu={() => {
-            setMenuOpen(true);
-            loadProfile();
-          }}
-        />
-        <SummaryRow
-          totalLabel="Expenses"
-          totalValue={summary.total ? formatAmount(summary.total, summary.currency) : "—"}
-          merchantCount={summary.merchantCount}
-          categoryCount={summary.categoryCount}
-        />
-        <ExpenseList
-          groupedExpenses={groupedExpenses}
-          fallbackCurrency={summary.currency}
-          onEdit={startEdit}
-          loading={loading}
-          error={error}
-        />
-        <EditExpensePanel
-          editing={editing}
-          form={editForm}
-          onChange={setEditForm}
-          onCancel={cancelEdit}
-          onSubmit={handleSaveEdit}
-        />
+        <div
+          className={styles.viewSwitcher}
+          data-editing={editing ? "true" : "false"}
+        >
+          <div className={styles.view}>
+            <MonthHeader
+              monthLabel={monthLabel}
+              onPrev={() => shiftMonth(-1)}
+              onNext={() => shiftMonth(1)}
+              onMenu={() => {
+                setMenuOpen(true);
+                loadProfile();
+              }}
+            />
+            <SummaryRow
+              totalLabel="Expenses"
+              totalValue={summary.total ? formatAmount(summary.total, summary.currency) : "—"}
+              merchantCount={summary.merchantCount}
+              categoryCount={summary.categoryCount}
+            />
+            <ExpenseList
+              groupedExpenses={groupedExpenses}
+              fallbackCurrency={summary.currency}
+              onEdit={startEdit}
+              loading={loading}
+              error={error}
+            />
+          </div>
+          <div className={styles.view}>
+            <EditExpensePanel
+              editing={editing}
+              form={editForm}
+              onChange={setEditForm}
+              onCancel={cancelEdit}
+              onSubmit={handleSaveEdit}
+            />
+          </div>
+        </div>
         <MenuDrawer
           isOpen={menuOpen}
           name={profileName}

@@ -1,6 +1,5 @@
 import hashlib
 import logging
-import random
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
@@ -37,7 +36,7 @@ class TokenResponse(BaseModel):
 
 
 def _generate_code(length: int = 6) -> str:
-    return "".join(random.choices(string.digits, k=length))
+    return "".join(secrets.choice(string.digits) for _ in range(length))
 
 
 def _create_jwt(user_id: str) -> str:

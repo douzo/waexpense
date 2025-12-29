@@ -27,21 +27,15 @@ export const EditExpensePanel = ({
 }: EditExpensePanelProps) => {
   if (!editing) return null;
   return (
-    <section className={styles.editPanel}>
+    <section className={styles.editPanel} aria-label="Edit expense">
       <div className={styles.editHeader}>
         <button className={styles.ghostBtn} onClick={onCancel}>
           ←
         </button>
         <div>
-          <p>Transaction</p>
-          <span>Expense</span>
+          <p>Edit transaction</p>
         </div>
         <span className={styles.editSpacer} />
-      </div>
-      <div className={styles.editTabs}>
-        <button className={styles.tabPill}>Income</button>
-        <button className={`${styles.tabPill} ${styles.tabPillActive}`}>Expense</button>
-        <button className={styles.tabPill}>Transfer</button>
       </div>
       <form className={styles.editList} onSubmit={onSubmit}>
         <div className={styles.editRow}>
@@ -98,9 +92,9 @@ export const EditExpensePanel = ({
         </div>
         <div className={styles.editActions}>
           <button type="button" className={styles.ghostBtn} onClick={onCancel}>
-            Cancel
+            Back
           </button>
-          <button type="submit">Save</button>
+          <button type="submit">Update</button>
         </div>
       </form>
     </section>

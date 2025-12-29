@@ -170,6 +170,49 @@ Example test messages:
 - Access: http://localhost:3000 — page pulls from backend `/api/expenses` and supports inline edits.
 - If your backend is not on `http://127.0.0.1:8000`, set an env in Next.js (e.g., `NEXT_PUBLIC_API_BASE=http://your-host:8000`) and use it in fetch calls once wired.
 
+## Tests
+
+### Backend + Lambda parser (Pytest)
+Run all Python unit/integration tests (backend + `lambda/text_parser`):
+```
+python3 -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+pytest
+```
+
+### UI E2E (Playwright)
+Runs against a local Next.js dev server and stubs the API responses in tests:
+```
+cd frontend/nextjs-app
+npm ci
+npx playwright install --with-deps
+npm run test:e2e
+```
+
+### SAST (local)
+Semgrep (general) + Bandit (Python security lint):
+```
+# Semgrep
+SEMGREP_USER_DATA_DIR=./.semgrep SSL_CERT_FILE=/etc/ssl/cert.pem pysemgrep --config p/ci --error --quiet
+
+# Bandit (uses .bandit config to ignore tests)
+bandit -r backend -q -c .bandit
+```
+
+### DAST (local)
+Use OWASP ZAP against a running app. Example (baseline scan):
+```
+# Backend (ensure API is running)
+zap-baseline.py -t http://127.0.0.1:8000 -r zap-backend.html
+
+# Frontend (ensure Next.js is running)
+zap-baseline.py -t http://127.0.0.1:3000 -r zap-frontend.html
+```
+
+### CI
+GitHub Actions runs tests on push/PR:
+- Workflow: `.github/workflows/tests.yml`
+- Jobs: `backend` (Pytest) and `frontend` (Playwright).
+
 ## Notes / Roadmap
 - Tables auto-create on startup for now; switch to Alembic migrations for real use.
 - OCR/image handling and background jobs are still stubbed.
