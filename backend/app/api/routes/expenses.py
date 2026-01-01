@@ -33,7 +33,7 @@ def _serialize_expense(expense: Expense) -> dict:
     }
 
 class ExpenseUpdate(BaseModel):
-    amount: Optional[float] = None
+    amount: Optional[float] = Field(default=None, gt=0)
     currency: Optional[str] = None
     category: Optional[str] = None
     merchant: Optional[str] = None
@@ -43,7 +43,7 @@ class ExpenseUpdate(BaseModel):
 
 class DevSeedBody(BaseModel):
     whatsapp_id: str = Field(..., min_length=5)
-    amount: float = 12.5
+    amount: float = Field(12.5, gt=0)
     currency: str = "USD"
     category: str = "food"
     merchant: str = "Local Cafe"
@@ -98,7 +98,13 @@ async def update_expense(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Amount cannot be empty",
             )
-        expense.amount = Decimal(str(update["amount"]))
+        amount = Decimal(str(update["amount"]))
+        if amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Amount must be greater than zero",
+            )
+        expense.amount = amount
     if "currency" in update and update["currency"]:
         expense.currency = update["currency"].upper()
     if "category" in update:

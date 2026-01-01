@@ -5,9 +5,10 @@ interface MonthHeaderProps {
   onPrev: () => void;
   onNext: () => void;
   onMenu: () => void;
+  planLabel?: string;
 }
 
-export const MonthHeader = ({ monthLabel, onPrev, onNext, onMenu }: MonthHeaderProps) => {
+export const MonthHeader = ({ monthLabel, onPrev, onNext, onMenu, planLabel }: MonthHeaderProps) => {
   return (
     <header className={styles.toolbar}>
       <button className={`${styles.iconButton}`} onClick={onPrev} aria-label="Previous month">
@@ -15,7 +16,10 @@ export const MonthHeader = ({ monthLabel, onPrev, onNext, onMenu }: MonthHeaderP
       </button>
       <div className={styles.toolbarTitle}>
         <span className={styles.pageTitle}>Transaction</span>
-        <small className={styles.monthLabel}>{monthLabel}</small>
+        <small className={styles.monthLabel}>
+          {monthLabel}
+          {planLabel && <span className={styles.planBadge}>{planLabel}</span>}
+        </small>
       </div>
       <div className={styles.toolbarActions}>
         <button className={styles.menuButton} onClick={onMenu} aria-label="Open menu">

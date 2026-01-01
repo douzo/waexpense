@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db import get_db
 from app.models import Expense, User
+from app.services.currency import resolve_currency
+from app.services.limits import daily_limit_for_user, has_reached_daily_limit
 from app.services.text_parser import parse_expense_text
 from app.services.whatsapp import whatsapp_service
 
@@ -163,22 +165,35 @@ async def _handle_text_message(
     body = _extract_text_body(message)
     parsed = await parse_expense_text(body, reference_date=reference_date)
 
-    if not parsed["amount"]:
-        logger.info("No amount found in message '%s'; skipping expense creation", body)
+    amount = parsed.get("amount")
+    if not amount or amount <= 0:
+        logger.info("No valid amount found in message '%s'; skipping expense creation", body)
         await whatsapp_service.send_text_message(
             user.whatsapp_id,
-            "I couldn't find an amount in that message. Please include something like 'Lunch 12 USD'.",
+            "I couldn't find a valid amount in that message. Please include something like 'Lunch 12 USD'.",
+        )
+        return
+
+    currency = resolve_currency(db, user, parsed.get("currency"), user.whatsapp_id)
+    parsed["currency"] = currency
+
+    expense_date = parsed["expense_date"]
+    if has_reached_daily_limit(db, user, expense_date):
+        limit = daily_limit_for_user(user)
+        await whatsapp_service.send_text_message(
+            user.whatsapp_id,
+            f"You've reached your daily limit of {limit} expenses. Try again tomorrow or upgrade for a higher limit.",
         )
         return
 
     expense = Expense(
         user_id=user.id,
-        amount=parsed["amount"],
-        currency=parsed["currency"],
+        amount=amount,
+        currency=currency,
         category=parsed["category"],
         merchant=parsed["merchant"],
         notes=parsed["notes"],
-        expense_date=parsed["expense_date"],
+        expense_date=expense_date,
     )
 
     db.add(expense)

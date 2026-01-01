@@ -15,6 +15,8 @@ class ProfileResponse(BaseModel):
     id: str
     whatsapp_id: str
     name: Optional[str] = None
+    default_currency: Optional[str] = None
+    is_premium: bool
 
 
 class ProfileUpdate(BaseModel):
@@ -29,6 +31,8 @@ async def get_profile(
         id=str(current_user.id),
         whatsapp_id=current_user.whatsapp_id,
         name=current_user.name,
+        default_currency=current_user.default_currency,
+        is_premium=current_user.is_premium,
     )
 
 
@@ -54,4 +58,6 @@ async def update_profile(
         id=str(current_user.id),
         whatsapp_id=current_user.whatsapp_id,
         name=current_user.name,
+        default_currency=current_user.default_currency,
+        is_premium=current_user.is_premium,
     )

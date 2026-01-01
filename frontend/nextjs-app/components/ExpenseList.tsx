@@ -8,6 +8,7 @@ interface ExpenseListProps {
   onEdit: (expense: Expense) => void;
   loading: boolean;
   error: string | null;
+  onRetry: () => void;
 }
 
 export const ExpenseList = ({
@@ -16,10 +17,22 @@ export const ExpenseList = ({
   onEdit,
   loading,
   error,
+  onRetry,
 }: ExpenseListProps) => {
+  if (error) {
+    return (
+      <section className={styles.listCard}>
+        <p className={styles.error}>{error}</p>
+        <div className={styles.errorActions}>
+          <button className={styles.ghostBtn} onClick={onRetry}>
+            Retry
+          </button>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className={styles.listCard}>
-      {error && <p className={styles.error}>{error}</p>}
       {loading ? (
         <div className={styles.empty}>Loading your expenses…</div>
       ) : groupedExpenses.length === 0 ? (

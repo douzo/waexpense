@@ -30,7 +30,7 @@ class DummyBedrock:
 def test_ensure_schema_defaults():
     out = handler._ensure_schema({"amount": "12.5"}, "coffee")
     assert out["amount"] == 12.5
-    assert out["currency"]
+    assert out["currency"] is None
     assert out["category"]
     assert out["notes"] == "coffee"
 

@@ -16,6 +16,7 @@ os.environ.setdefault("WHATSAPP_PHONE_NUMBER_ID", "1234567890")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("EXTERNAL_TEXT_PARSER_URL", "http://localhost:9999/parser")
+os.environ.setdefault("ADMIN_API_KEY", "test-admin-key")
 
 from app.db import SessionLocal, engine, get_db
 from app.main import app

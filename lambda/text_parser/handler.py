@@ -38,8 +38,11 @@ def _ensure_schema(obj: Dict[str, Any], original_text: str) -> Dict[str, Any]:
         out["amount"] = None
 
     # currency
-    cur = obj.get("currency") or DEFAULT_CURRENCY
-    out["currency"] = str(cur).upper()
+    cur = obj.get("currency")
+    if cur is None or str(cur).strip() == "":
+        out["currency"] = None
+    else:
+        out["currency"] = str(cur).upper()
 
     # date
     d = obj.get("expense_date") or date.today().isoformat()
@@ -88,7 +91,7 @@ Input: a short human message describing a personal expense.
 Output: a single JSON object with exactly these fields:
 
 - amount (number) – total amount spent
-- currency (string) – 3-letter ISO code, e.g. "USD", "JPY", "INR"
+- currency (string or null) – 3-letter ISO code (e.g. "USD", "JPY", "INR"); use null if not specified
 - expense_date (string) – ISO date "YYYY-MM-DD"; use "{today}" if not specified
 - category (string) – one of: "grocery", "food", "transport", "shopping", "general"
 - merchant (string or null) – store/provider name if present, otherwise null
@@ -96,6 +99,7 @@ Output: a single JSON object with exactly these fields:
 
 Rules:
 - Infer currency from symbols or words (e.g. "JPY", "¥", "yen" → "JPY"; "rupee", "rupees", "rs" → "INR").
+- If the user does NOT specify currency, set currency to null.
 - For transport (bus, train, taxi, uber, shinkansen, metro, subway, etc.) use category "transport".
 - For fruits, vegetables, supermarket, groceries (apple, kg, grocery, supermarket, market, etc.) use category "grocery".
 - For meals (dinner, lunch, breakfast, restaurant, cafe) use category "food".

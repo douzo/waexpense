@@ -81,7 +81,7 @@ def _parse_local(message: str, reference_date: Optional[date] = None) -> Dict[st
 
     return {
         "amount": amount,
-        "currency": currency or "USD",
+        "currency": currency,
         "expense_date": parsed_date or reference_date or date.today(),
         "category": category or "general",
         "merchant": merchant,

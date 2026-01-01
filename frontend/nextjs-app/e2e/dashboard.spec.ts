@@ -17,8 +17,41 @@ const stubExpenses = async (page: any, items: any[]) => {
   });
 };
 
+const stubProfile = async (page: any, isPremium = false) => {
+  await page.route("**/api/profile", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "u1",
+          whatsapp_id: "wa1",
+          name: "Asha",
+          is_premium: isPremium,
+        }),
+      });
+      return;
+    }
+    if (route.request().method() === "PATCH") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "u1",
+          whatsapp_id: "wa1",
+          name: "Asha N",
+          is_premium: isPremium,
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+};
+
 test("dashboard renders expenses", async ({ page }) => {
   await stubAuthStorage(page);
+  await stubProfile(page);
 
   const today = new Date().toISOString().slice(0, 10);
   await stubExpenses(page, [
@@ -45,6 +78,7 @@ test("dashboard renders expenses", async ({ page }) => {
 
 test("dashboard shows empty state when no expenses", async ({ page }) => {
   await stubAuthStorage(page);
+  await stubProfile(page);
   await stubExpenses(page, []);
 
   await page.goto("/");
@@ -54,6 +88,7 @@ test("dashboard shows empty state when no expenses", async ({ page }) => {
 
 test("month navigation updates the label", async ({ page }) => {
   await stubAuthStorage(page);
+  await stubProfile(page);
   await stubExpenses(page, []);
 
   await page.goto("/");
@@ -67,6 +102,7 @@ test("month navigation updates the label", async ({ page }) => {
 
 test("edit expense flow updates and returns to list", async ({ page }) => {
   await stubAuthStorage(page);
+  await stubProfile(page);
   const today = new Date().toISOString().slice(0, 10);
   await stubExpenses(page, [
     {
@@ -121,31 +157,37 @@ test("edit expense flow updates and returns to list", async ({ page }) => {
 
 test("menu opens and saves profile name", async ({ page }) => {
   await stubAuthStorage(page);
+  await stubProfile(page);
   await stubExpenses(page, []);
-
-  await page.route("**/api/profile", async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ id: "u1", whatsapp_id: "wa1", name: "Asha" }),
-      });
-      return;
-    }
-    if (route.request().method() === "PATCH") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ id: "u1", whatsapp_id: "wa1", name: "Asha N" }),
-      });
-      return;
-    }
-    await route.fallback();
-  });
 
   await page.goto("/");
   await page.getByLabel("Open menu").click();
   await expect(page.getByText("Profile & Settings")).toBeVisible();
   await page.getByLabel("Your name").fill("Asha N");
   await page.getByRole("button", { name: "Save profile" }).click();
+});
+
+test("premium badge shows only for premium users", async ({ page }) => {
+  await stubAuthStorage(page);
+  await stubProfile(page, true);
+  await stubExpenses(page, []);
+
+  await page.goto("/");
+  await expect(page.getByText("Premium")).toBeVisible();
+
+  await page.route("**/api/profile", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "u1",
+        whatsapp_id: "wa1",
+        name: "Asha",
+        is_premium: false,
+      }),
+    });
+  });
+
+  await page.reload();
+  await expect(page.getByText("Premium")).not.toBeVisible();
 });

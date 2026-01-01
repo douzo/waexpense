@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Expense } from "../types/expense";
 import { clearTokens, getStoredTokens, refreshAccessToken } from "../services/auth";
@@ -8,11 +8,20 @@ export const useExpenses = (onAuthFail: () => void) => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const reload = useCallback(() => {
+    setReloadKey((prev) => prev + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
+        if (active) {
+          setLoading(true);
+          setError(null);
+        }
         const { accessToken } = getStoredTokens();
         if (!accessToken) {
           onAuthFail();
@@ -46,7 +55,7 @@ export const useExpenses = (onAuthFail: () => void) => {
     return () => {
       active = false;
     };
-  }, [onAuthFail]);
+  }, [onAuthFail, reloadKey]);
 
-  return { expenses, setExpenses, loading, error, setError };
+  return { expenses, setExpenses, loading, error, setError, reload };
 };

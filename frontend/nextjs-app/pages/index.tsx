@@ -18,6 +18,7 @@ export default function Home() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileName, setProfileName] = useState("");
+  const [isPremium, setIsPremium] = useState(false);
   const lastListScroll = useRef<number | null>(null);
   const [editForm, setEditForm] = useState({
     amount: "",
@@ -35,7 +36,9 @@ export default function Home() {
     }
   }, []);
 
-  const { expenses, setExpenses, loading, error, setError } = useExpenses(onAuthFail);
+  const { expenses, setExpenses, loading, error, setError, reload } = useExpenses(onAuthFail);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const { monthLabel, groupedExpenses, filteredExpenses, shiftMonth } = useMonth(expenses);
 
   const summary = useMemo(() => {
@@ -55,6 +58,7 @@ export default function Home() {
   }, [filteredExpenses]);
 
   const startEdit = (expense: Expense) => {
+    setEditError(null);
     setEditing(expense);
     setEditForm({
       amount: expense.amount.toString(),
@@ -67,6 +71,7 @@ export default function Home() {
   };
 
   const cancelEdit = () => {
+    setEditError(null);
     setEditing(null);
   };
 
@@ -74,6 +79,8 @@ export default function Home() {
     event.preventDefault();
     if (!editing) return;
     try {
+      setEditSaving(true);
+      setEditError(null);
       const { accessToken } = getStoredTokens();
       if (!accessToken) {
         onAuthFail();
@@ -104,7 +111,9 @@ export default function Home() {
       setEditing(null);
     } catch (err) {
       console.error(err);
-      setError("Failed to update expense");
+      setEditError("Failed to update expense. Please try again.");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -154,12 +163,18 @@ export default function Home() {
       if (!retry.ok) return;
       const data = await retry.json();
       setProfileName(data.name || "");
+      setIsPremium(Boolean(data.is_premium));
       return;
     }
     if (!res.ok) return;
     const data = await res.json();
     setProfileName(data.name || "");
+    setIsPremium(Boolean(data.is_premium));
   };
+
+  useEffect(() => {
+    loadProfile();
+  }, []);
 
   return (
     <main className={styles.page}>
@@ -171,6 +186,7 @@ export default function Home() {
           <div className={styles.view}>
             <MonthHeader
               monthLabel={monthLabel}
+              planLabel={isPremium ? "Premium" : undefined}
               onPrev={() => shiftMonth(-1)}
               onNext={() => shiftMonth(1)}
               onMenu={() => {
@@ -190,6 +206,7 @@ export default function Home() {
               onEdit={startEdit}
               loading={loading}
               error={error}
+              onRetry={reload}
             />
           </div>
           <div className={styles.view}>
@@ -198,6 +215,8 @@ export default function Home() {
               form={editForm}
               onChange={setEditForm}
               onCancel={cancelEdit}
+              saving={editSaving}
+              error={editError}
               onSubmit={handleSaveEdit}
             />
           </div>

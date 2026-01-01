@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String
+from sqlalchemy import Boolean, Column, String
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.models.base import Base, TimestampMixin
@@ -12,3 +12,5 @@ class User(Base, TimestampMixin):
     whatsapp_id = Column(String, unique=True, nullable=False, index=True)
     phone_number = Column(String, nullable=True)
     name = Column(String, nullable=True)
+    default_currency = Column(String, nullable=True)
+    is_premium = Column(Boolean, default=False, nullable=False)

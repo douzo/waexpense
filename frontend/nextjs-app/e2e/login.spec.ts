@@ -30,6 +30,19 @@ test("login flow requests code and verifies", async ({ page }) => {
     });
   });
 
+  await page.route("**/api/profile", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "u1",
+        whatsapp_id: "wa1",
+        name: "Asha",
+        is_premium: false,
+      }),
+    });
+  });
+
   await page.goto("/login");
 
   await page.getByLabel("WhatsApp ID / phone number").fill("15551234567");

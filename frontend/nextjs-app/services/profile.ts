@@ -4,6 +4,8 @@ export interface Profile {
   id: string;
   whatsapp_id: string;
   name?: string | null;
+  default_currency?: string | null;
+  is_premium: boolean;
 }
 
 export const getProfile = async (accessToken: string): Promise<Response> => {

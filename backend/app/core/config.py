@@ -24,11 +24,24 @@ class Settings(BaseSettings):
     refresh_token_expiry_days: int = Field(1, env="REFRESH_TOKEN_EXPIRY_DAYS")
     login_code_expiry_minutes: int = Field(10, env="LOGIN_CODE_EXPIRY_MINUTES")
 
+    # Usage limits
+    daily_limit_free: int = Field(10, env="DAILY_LIMIT_FREE")
+    daily_limit_premium: int = Field(50, env="DAILY_LIMIT_PREMIUM")
+
     # Optional external text parser service (AWS/GCP, custom endpoint, etc.)
     external_text_parser_url: str = Field(..., env="EXTERNAL_TEXT_PARSER_URL")
     external_text_parser_api_key: Optional[str] = Field(
         default=None, env="EXTERNAL_TEXT_PARSER_API_KEY"
     )
+
+    # Currency defaults
+    default_currency: str = Field("USD", env="DEFAULT_CURRENCY")
+
+    # Admin tooling
+    admin_api_key: Optional[str] = Field(default=None, env="ADMIN_API_KEY")
+
+    # Migrations
+    auto_migrate: bool = Field(False, env="AUTO_MIGRATE")
 
     class Config:
         env_file = BASE_DIR / ".env"

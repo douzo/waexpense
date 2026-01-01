@@ -26,6 +26,7 @@ WHATSAPP_ACCESS_TOKEN="your-wa-access-token"
 WHATSAPP_PHONE_NUMBER_ID="your-wa-phone-id"
 ACCESS_TOKEN_EXPIRY_MINUTES=15
 REFRESH_TOKEN_EXPIRY_DAYS=30
+AUTO_MIGRATE=true
 ```
 
 ### 3) Install deps
@@ -34,6 +35,12 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+### 3b) Run migrations (recommended)
+```
+cd backend
+alembic -c alembic.ini upgrade head
 ```
 
 ### 4) Run the API
@@ -217,3 +224,18 @@ GitHub Actions runs tests on push/PR:
 - Tables auto-create on startup for now; switch to Alembic migrations for real use.
 - OCR/image handling and background jobs are still stubbed.
 - Keep secrets out of Git; prefer `.env` + secret managers in production.
+
+## Release Checklist (MVP)
+- [x] WhatsApp webhook ingestion (receive + store)
+- [x] Text parsing (Lambda parser + API integration)
+- [x] Auth: login code, access/refresh, logout
+- [x] Dashboard list + month navigation
+- [x] Edit expense flow
+- [x] Automated tests (Pytest + Playwright) + CI
+- [ ] Guardrails for missing/invalid amounts (no insert + user prompt)
+- [ ] UI error handling + retry states
+- [ ] Tighten CORS + rate limits on auth endpoints
+- [ ] Observability (structured logs + alerts for webhook/parser/queue failures)
+- [ ] Backups/retention policies for RDS + logs
+- [ ] DAST against deployed URLs
+- [ ] Final UX polish (onboarding, empty states, confirmations)

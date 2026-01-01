@@ -15,6 +15,8 @@ interface EditExpensePanelProps {
   };
   onChange: (next: EditExpensePanelProps["form"]) => void;
   onCancel: () => void;
+  saving: boolean;
+  error: string | null;
   onSubmit: (event: FormEvent) => void;
 }
 
@@ -23,6 +25,8 @@ export const EditExpensePanel = ({
   form,
   onChange,
   onCancel,
+  saving,
+  error,
   onSubmit,
 }: EditExpensePanelProps) => {
   if (!editing) return null;
@@ -37,16 +41,16 @@ export const EditExpensePanel = ({
         </div>
         <span className={styles.editSpacer} />
       </div>
-      <form className={styles.editList} onSubmit={onSubmit}>
-        <div className={styles.editRow}>
-          <span>Date</span>
-          <input
-            type="date"
-            value={form.expense_date}
-            onChange={(e) => onChange({ ...form, expense_date: e.target.value })}
-            required
-          />
-        </div>
+        <form className={styles.editList} onSubmit={onSubmit}>
+          <div className={styles.editRow}>
+            <span>Date</span>
+            <input
+              type="date"
+              value={form.expense_date}
+              onChange={(e) => onChange({ ...form, expense_date: e.target.value })}
+              required
+            />
+          </div>
         <div className={styles.editRow}>
           <span>Category</span>
           <input
@@ -82,21 +86,24 @@ export const EditExpensePanel = ({
             />
           </div>
         </div>
-        <div className={styles.editRow}>
-          <span>Note</span>
-          <input
-            type="text"
-            value={form.notes}
-            onChange={(e) => onChange({ ...form, notes: e.target.value })}
-          />
-        </div>
+          <div className={styles.editRow}>
+            <span>Note</span>
+            <input
+              type="text"
+              value={form.notes}
+              onChange={(e) => onChange({ ...form, notes: e.target.value })}
+            />
+          </div>
+          {error && <p className={styles.editError}>{error}</p>}
         <div className={styles.editActions}>
-          <button type="button" className={styles.ghostBtn} onClick={onCancel}>
+          <button type="button" className={styles.ghostBtn} onClick={onCancel} disabled={saving}>
             Back
           </button>
-          <button type="submit">Update</button>
+          <button type="submit" className={styles.primaryBtn} disabled={saving}>
+            {saving ? "Updating…" : "Update"}
+          </button>
         </div>
-      </form>
-    </section>
+        </form>
+      </section>
   );
 };

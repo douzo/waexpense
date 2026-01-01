@@ -42,6 +42,9 @@
   color: #6b7280;
   font-weight: 500;
   font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .iconButton {
@@ -89,6 +92,19 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.planBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
 }
 
 .viewSwitcher {
@@ -163,6 +179,11 @@
 .error {
   color: #dc2626;
   margin-bottom: 0.75rem;
+}
+
+.errorActions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .empty {
@@ -390,7 +411,7 @@
 
 .editRow {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: minmax(90px, 32%) minmax(0, 1fr);
   align-items: center;
   gap: 1rem;
   padding-bottom: 0.75rem;
@@ -408,12 +429,19 @@
   padding: 0.55rem 0.75rem;
   background: #f8fafc;
   color: #0f172a;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .amountGroup {
   display: grid;
   grid-template-columns: 80px 1fr;
   gap: 0.75rem;
+}
+
+.amountGroup input {
+  width: 100%;
+  min-width: 0;
 }
 
 .currencyInput {
@@ -427,6 +455,36 @@
   margin-top: 0.5rem;
 }
 
+.editError {
+  color: #dc2626;
+  font-weight: 600;
+  margin: 0.25rem 0 0.75rem;
+}
+
+@media (max-width: 520px) {
+  .editPanel {
+    padding-bottom: 3.5rem;
+  }
+
+  .editRow {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .amountGroup {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .editActions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .editActions button {
+    width: 100%;
+    min-height: 44px;
+  }
+}
 @media (min-width: 900px) {
   .shell {
     width: min(980px, 100%);

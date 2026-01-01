@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.models import Expense, User
+from app.services.currency import resolve_currency
+from app.services.limits import daily_limit_for_user, has_reached_daily_limit
 from app.services.queue import enqueue_outbound_text
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,18 @@ def _parse_date(value: Any) -> date | None:
     return None
 
 
+def _normalize_amount(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        amount = Decimal(str(value))
+    except Exception:
+        return None
+    if amount <= 0:
+        return None
+    return amount
+
+
 def _persist_expense(db: Session, wa_id: str, expense: Dict[str, Any]) -> Expense:
     user = db.query(User).filter(User.whatsapp_id == wa_id).first()
     if not user:
@@ -32,16 +46,15 @@ def _persist_expense(db: Session, wa_id: str, expense: Dict[str, Any]) -> Expens
         db.commit()
         db.refresh(user)
 
-    amount = expense.get("amount")
-    if amount is not None:
-        amount = Decimal(str(amount))
+    amount = _normalize_amount(expense.get("amount"))
 
     expense_date = _parse_date(expense.get("expense_date")) or date.today()
+    currency = resolve_currency(db, user, expense.get("currency"), wa_id)
 
     record = Expense(
         user_id=user.id,
         amount=amount,
-        currency=expense.get("currency"),
+        currency=currency,
         category=expense.get("category"),
         merchant=expense.get("merchant"),
         notes=expense.get("notes"),
@@ -64,10 +77,25 @@ def _handle_record(db: Session, body: Dict[str, Any]):
         logger.warning("Missing wa_id; skipping message")
         return
 
-    if expense.get("amount") is None:
+    if _normalize_amount(expense.get("amount")) is None:
         enqueue_outbound_text(
             wa_id,
-            "I couldn't find an amount in that message. Please include something like 'Lunch 12 USD'.",
+            "I couldn't find a valid amount in that message. Please include something like 'Lunch 12 USD'.",
+        )
+        return
+
+    expense_date = _parse_date(expense.get("expense_date")) or date.today()
+    user = db.query(User).filter(User.whatsapp_id == wa_id).first()
+    if not user:
+        user = User(whatsapp_id=wa_id)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    if has_reached_daily_limit(db, user, expense_date):
+        limit = daily_limit_for_user(user)
+        enqueue_outbound_text(
+            wa_id,
+            f"You've reached your daily limit of {limit} expenses. Try again tomorrow or upgrade for a higher limit.",
         )
         return
 
