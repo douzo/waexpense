@@ -27,6 +27,12 @@ variable "enable_nat_gateway" {
   default     = false
 }
 
+variable "enable_auto_sleep" {
+  description = "Enable automatic sleep/wake behaviour for expensive resources"
+  type        = bool
+  default     = false
+}
+
 variable "public_subnet_cidrs" {
   description = "List of public subnet CIDRs"
   type        = list(string)
@@ -169,6 +175,18 @@ variable "secret_env_parameters" {
   description = "Map of ENV_VAR_NAME => SSM parameter ARN (SecureString)"
   type        = map(string)
   default     = {}
+}
+
+variable "idle_minutes_threshold" {
+  description = "Minutes of inactivity before the environment is considered idle and eligible for sleep"
+  type        = number
+  default     = 30
+}
+
+variable "sleep_check_interval_minutes" {
+  description = "How often (in minutes) the env manager Lambda should evaluate idle state"
+  type        = number
+  default     = 5
 }
 
 variable "lambda_text_parser_name" {

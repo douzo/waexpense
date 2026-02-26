@@ -132,7 +132,27 @@ Following this process ensures deployments are reproducible, reviewable, and req
 
 ---
 
-## 7. Step-by-Step Deployment (First Time)
+## 7. Cost drivers (dev & prod)
+
+At a high level, the main AWS cost drivers for this stack are:
+
+- **RDS PostgreSQL instance**: always-on compute + storage, even when no traffic.
+- **NAT gateway(s)** (if `enable_nat_gateway = true`): hourly charge + data processing.
+- **VPC interface endpoints** (e.g., SQS): small hourly cost but non-zero.
+- **API Gateway**: pay-per-request; usually low cost unless you have high traffic.
+- **Lambda**: very cheap when idle; cost scales with invocations and duration.
+
+For your own account, you can confirm this by:
+
+- Using **AWS Cost Explorer** filtered to the region and tags for this project.
+- Breaking down by **service** (RDS, NAT Gateway, API Gateway, Lambda, SQS, S3, etc.).
+- Optionally filtering by **tag** (e.g., `Project=waexpense`, `Environment=dev|prod`) if you have tagging enabled.
+
+The auto sleep/wake mechanism introduced in this repo focuses on reducing **RDS** and related networking costs during development, while keeping Lambda/API Gateway/SQS available to buffer traffic.
+
+---
+
+## 8. Step-by-Step Deployment (First Time)
 
 ### 1) Configure AWS CLI
 ```bash
@@ -216,7 +236,40 @@ Open the S3 website endpoint (or CloudFront URL) and verify login works.
 
 ---
 
-## 8. Troubleshooting Notes (From This Deployment)
+## 9. Auto sleep/wake behaviour
+
+This stack includes an optional **auto sleep/wake** mechanism for the environment:
+
+- **Env manager Lambda**: `waexpense-<env>-env-manager` (name prefix `local.name_prefix`).
+- **State store**: SSM parameter `/waexpense/<env>/env_state` storing:
+  - `state`: `"active" | "sleeping" | "waking"`.
+  - `lastActivityAt`: ISO timestamp of last observed activity.
+  - `overrideAlwaysOn`: boolean flag to keep the env awake.
+- **Activity signals**:
+  - API (`api` Lambda) and webhook (`webhook` Lambda) invoke the env manager with action `wakeOnDemand` on each request.
+- **Sleep logic**:
+  - Controlled by `enable_auto_sleep`, `idle_minutes_threshold`, and `sleep_check_interval_minutes` in `variables.tf`.
+  - When no activity is seen for `idle_minutes_threshold` minutes and `overrideAlwaysOn` is `false`, the env manager:
+    - Disables the SQS worker event source mappings.
+    - Stops the RDS instance.
+- **Wake logic**:
+  - On new API/webhook traffic, `wakeOnDemand`:
+    - Updates `lastActivityAt`.
+    - Starts the RDS instance (if sleeping) and waits until it is available.
+    - Re-enables the SQS worker event source mappings.
+
+### Toggling behaviour
+
+- To **enable auto sleep** for an environment:
+  - Set `enable_auto_sleep = true` in `terraform.tfvars`.
+  - Optionally adjust `idle_minutes_threshold` and `sleep_check_interval_minutes`.
+- To temporarily force the environment to **stay awake**:
+  - Update the SSM parameter value at `/waexpense/<env>/env_state`, setting `"overrideAlwaysOn": true`.
+  - The next env manager invocation will keep the state as `"active"` and skip sleeping.
+
+---
+
+## 10. Troubleshooting Notes (From This Deployment)
 
 ### Terraform + AWS Access
 - **STS `SignatureDoesNotMatch`**: AWS credentials invalid or wrong region; re-run `aws configure` and verify `aws sts get-caller-identity` works.

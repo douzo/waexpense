@@ -2,9 +2,12 @@ import asyncio
 import base64
 import json
 import logging
+import os
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
+
+import boto3
 
 from app.core.config import settings
 from app.services.queue import enqueue_inbound, enqueue_outbound_text
@@ -12,6 +15,9 @@ from app.services.text_parser import parse_expense_text
 from app.services.whatsapp import whatsapp_service
 
 logger = logging.getLogger(__name__)
+
+_lambda_client = boto3.client("lambda")
+_env_manager_function_name = os.getenv("ENV_MANAGER_FUNCTION_NAME")
 
 
 def _run_async(coro):
@@ -119,6 +125,16 @@ def _verify_webhook(query: Dict[str, str]) -> Dict[str, Any]:
 
 
 def lambda_handler(event, context):
+    if _env_manager_function_name:
+        try:
+            _lambda_client.invoke(
+                FunctionName=_env_manager_function_name,
+                InvocationType="Event",
+                Payload=json.dumps({"action": "wakeOnDemand"}),
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            logger.warning("Failed to invoke env manager from webhook: %s", exc)
+
     request_context = event.get("requestContext", {})
     method = request_context.get("http", {}).get("method")
 

@@ -21,6 +21,8 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
   name_prefix = "${var.project}-${var.environment}"
   azs         = slice(data.aws_availability_zones.available.names, 0, length(var.public_subnet_cidrs))
@@ -116,9 +118,12 @@ resource "aws_s3_bucket_public_access_block" "receipts" {
 }
 
 
+
 # RDS
+# Name includes VPC ID so we can replace the subnet group when VPC/subnets change
+# (AWS does not allow in-place change of subnet group to subnets in a different VPC).
 resource "aws_db_subnet_group" "this" {
-  name       = "${local.name_prefix}-db-subnets"
+  name       = "${local.name_prefix}-db-subnets-${replace(module.vpc.vpc_id, "vpc-", "")}"
   subnet_ids = module.vpc.private_subnets
 }
 
@@ -294,14 +299,17 @@ locals {
   lambda_secrets = { for key, value in data.aws_ssm_parameter.lambda_secrets : key => value.value }
   base_env = merge(
     {
-      APP_NAME                 = var.app_name
-      DEBUG                    = tostring(var.debug)
-      DATABASE_URL             = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.address}:${aws_db_instance.this.port}/${var.db_name}"
-      WHATSAPP_PHONE_NUMBER_ID = var.whatsapp_phone_number_id
-      EXTERNAL_TEXT_PARSER_URL = var.external_text_parser_url
+      APP_NAME                  = var.app_name
+      DEBUG                     = tostring(var.debug)
+      DATABASE_URL              = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.address}:${aws_db_instance.this.port}/${var.db_name}"
+      WHATSAPP_PHONE_NUMBER_ID  = var.whatsapp_phone_number_id
+      EXTERNAL_TEXT_PARSER_URL  = var.external_text_parser_url
       LOGIN_CODE_EXPIRY_MINUTES = tostring(var.login_code_expiry_minutes)
-      INBOUND_QUEUE_URL        = aws_sqs_queue.inbound.id
-      OUTBOUND_QUEUE_URL       = aws_sqs_queue.outbound.id
+      INBOUND_QUEUE_URL         = aws_sqs_queue.inbound.id
+      OUTBOUND_QUEUE_URL        = aws_sqs_queue.outbound.id
+      ENABLE_AUTO_SLEEP         = tostring(var.enable_auto_sleep)
+      IDLE_MINUTES_THRESHOLD    = tostring(var.idle_minutes_threshold)
+      ENV_STATE_SSM_PARAMETER_NAME = "/${var.project}/${var.environment}/env_state"
     },
     var.plain_env_overrides,
     local.lambda_secrets
@@ -326,7 +334,12 @@ resource "aws_lambda_function" "backend_api" {
   }
 
   environment {
-    variables = local.base_env
+    variables = merge(
+      local.base_env,
+      {
+        ENV_MANAGER_FUNCTION_NAME = aws_lambda_function.env_manager.function_name
+      }
+    )
   }
 }
 
@@ -365,7 +378,12 @@ resource "aws_lambda_function" "webhook_ingest" {
   }
 
   environment {
-    variables = local.base_env
+    variables = merge(
+      local.base_env,
+      {
+        ENV_MANAGER_FUNCTION_NAME = aws_lambda_function.env_manager.function_name
+      }
+    )
   }
 }
 
@@ -394,6 +412,102 @@ resource "aws_lambda_event_source_mapping" "inbound_worker" {
 resource "aws_lambda_event_source_mapping" "outbound_sender" {
   event_source_arn = aws_sqs_queue.outbound.arn
   function_name    = aws_lambda_function.outbound_sender.arn
+}
+
+resource "aws_iam_role" "lambda_env_manager" {
+  name               = "${local.name_prefix}-lambda-env-manager"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_env_manager_basic" {
+  role       = aws_iam_role.lambda_env_manager.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "lambda_env_manager_control" {
+  name = "${local.name_prefix}-lambda-env-manager-control"
+  role = aws_iam_role.lambda_env_manager.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "rds:StartDBInstance",
+          "rds:StopDBInstance",
+          "rds:DescribeDBInstances",
+        ]
+        Resource = [aws_db_instance.this.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:UpdateEventSourceMapping",
+        ]
+        Resource = [
+          aws_lambda_event_source_mapping.inbound_worker.arn,
+          aws_lambda_event_source_mapping.outbound_sender.arn,
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:PutParameter",
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/${var.environment}/*",
+        ]
+      },
+    ]
+  })
+}
+
+resource "aws_lambda_function" "env_manager" {
+  function_name = "${local.name_prefix}-env-manager"
+  role          = aws_iam_role.lambda_env_manager.arn
+  package_type  = "Image"
+  image_uri     = var.backend_lambda_image != "" ? var.backend_lambda_image : "${aws_ecr_repository.backend.repository_url}:latest"
+  memory_size   = 256
+  timeout       = 900
+
+  image_config {
+    command = ["app.lambda_handlers.env_manager.lambda_handler"]
+  }
+
+  environment {
+    variables = {
+      DB_INSTANCE_IDENTIFIER       = aws_db_instance.this.id
+      INBOUND_MAPPING_UUID         = aws_lambda_event_source_mapping.inbound_worker.uuid
+      OUTBOUND_MAPPING_UUID        = aws_lambda_event_source_mapping.outbound_sender.uuid
+      ENV_STATE_SSM_PARAMETER_NAME = "/${var.project}/${var.environment}/env_state"
+      ENABLE_AUTO_SLEEP            = tostring(var.enable_auto_sleep)
+      IDLE_MINUTES_THRESHOLD       = tostring(var.idle_minutes_threshold)
+    }
+  }
+}
+
+resource "aws_cloudwatch_event_rule" "env_manager_idle_check" {
+  name                = "${local.name_prefix}-env-manager-idle-check"
+  schedule_expression = "rate(${var.sleep_check_interval_minutes} minutes)"
+
+  is_enabled = var.enable_auto_sleep
+}
+
+resource "aws_cloudwatch_event_target" "env_manager_idle_check" {
+  rule      = aws_cloudwatch_event_rule.env_manager_idle_check.name
+  target_id = "env-manager"
+  arn       = aws_lambda_function.env_manager.arn
+  input     = jsonencode({ action = "evaluateIdle" })
+}
+
+resource "aws_lambda_permission" "env_manager_events" {
+  statement_id  = "AllowEventBridgeInvokeEnvManager"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.env_manager.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.env_manager_idle_check.arn
 }
 
 resource "aws_apigatewayv2_api" "backend" {
@@ -468,4 +582,60 @@ resource "aws_vpc_endpoint" "sqs" {
   subnet_ids          = module.vpc.private_subnets
   private_dns_enabled = true
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
+}
+
+resource "aws_iam_role_policy" "lambda_vpc_invoke_env_manager" {
+  name = "${local.name_prefix}-lambda-vpc-invoke-env-manager"
+  role = aws_iam_role.lambda_vpc.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction",
+        ]
+        Resource = [
+          aws_lambda_function.env_manager.arn,
+        ]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_public_invoke_env_manager" {
+  name = "${local.name_prefix}-lambda-public-invoke-env-manager"
+  role = aws_iam_role.lambda_public.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction",
+        ]
+        Resource = [
+          aws_lambda_function.env_manager.arn,
+        ]
+      },
+    ]
+  })
+}
+
+resource "aws_lambda_permission" "env_manager_from_backend_api" {
+  statement_id  = "AllowBackendApiInvokeEnvManager"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.env_manager.function_name
+  principal     = "lambda.amazonaws.com"
+  source_arn    = aws_lambda_function.backend_api.arn
+}
+
+resource "aws_lambda_permission" "env_manager_from_webhook" {
+  statement_id  = "AllowWebhookInvokeEnvManager"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.env_manager.function_name
+  principal     = "lambda.amazonaws.com"
+  source_arn    = aws_lambda_function.webhook_ingest.arn
 }
