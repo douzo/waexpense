@@ -86,6 +86,14 @@ export default function Login() {
   return (
     <main className="page">
       <div className="shell login">
+        <div className="brand">
+          <div className="brand-mark">W</div>
+          <div className="brand-text">
+            <span className="brand-name">WaExpense</span>
+            <span className="brand-tagline">WhatsApp expense insights</span>
+          </div>
+        </div>
+
         <header className="hero">
           <div>
             <p className="eyebrow">Sign in</p>
@@ -173,7 +181,27 @@ export default function Login() {
               </div>
             </form>
           )}
+
+          <p className="trust-copy">
+            Your WhatsApp number is only used for login. No passwords to remember,
+            and you can revoke access anytime.
+          </p>
         </section>
+
+        <footer className="shell-footer" aria-label="Legal and help links">
+          <span className="footer-copy">© {new Date().getFullYear()} WaExpense</span>
+          <nav className="footer-links">
+            <a href="#" className="footer-link">
+              Privacy
+            </a>
+            <a href="#" className="footer-link">
+              Terms
+            </a>
+            <a href="#" className="footer-link">
+              Help
+            </a>
+          </nav>
+        </footer>
       </div>
 
       <style jsx>{`
@@ -203,8 +231,47 @@ export default function Login() {
           box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
         }
 
-        .hero {
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
           margin-bottom: 1.5rem;
+        }
+
+        .brand-mark {
+          width: 32px;
+          height: 32px;
+          border-radius: 999px;
+          background: radial-gradient(circle at 30% 20%, #ffffff, #1d4ed8);
+          color: #eff6ff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          font-size: 0.9rem;
+          box-shadow: 0 6px 18px rgba(15, 23, 42, 0.35);
+        }
+
+        .brand-text {
+          display: flex;
+          flex-direction: column;
+          gap: 0.1rem;
+        }
+
+        .brand-name {
+          font-weight: 600;
+          font-size: 0.95rem;
+          letter-spacing: 0.02em;
+          color: #0f172a;
+        }
+
+        .brand-tagline {
+          font-size: 0.8rem;
+          color: #64748b;
+        }
+
+        .hero {
+          margin-bottom: 1.25rem;
         }
 
         .eyebrow {
@@ -212,6 +279,7 @@ export default function Login() {
           letter-spacing: 0.16em;
           font-size: 0.75rem;
           color: #2563eb;
+          opacity: 0.9;
           margin: 0 0 0.4rem;
         }
 
@@ -223,6 +291,7 @@ export default function Login() {
         .subtitle {
           margin-top: 0.75rem;
           color: #475569;
+          max-width: 42ch;
         }
 
         .card {
@@ -241,12 +310,17 @@ export default function Login() {
         .step {
           display: flex;
           gap: 0.9rem;
-          padding: 0.75rem 0;
+          padding: 0.6rem 0.25rem;
           border-bottom: 1px solid rgba(148, 163, 184, 0.2);
         }
 
         .step:last-child {
           border-bottom: none;
+        }
+
+        .step.active {
+          background: rgba(37, 99, 235, 0.06);
+          border-radius: 12px;
         }
 
         .step-index {
@@ -276,6 +350,10 @@ export default function Login() {
           font-weight: 600;
         }
 
+        .step.active p {
+          font-size: 0.98rem;
+        }
+
         .step small {
           display: block;
           margin-top: 0.2rem;
@@ -286,22 +364,49 @@ export default function Login() {
           border-radius: 16px;
           padding: 0.85rem 1.2rem;
           font-size: 0.95rem;
-          margin-bottom: 1rem;
+          margin: 0.75rem 0 1rem;
+          display: flex;
+          align-items: flex-start;
+          gap: 0.5rem;
+          line-height: 1.4;
+        }
+
+        .status::before {
+          content: "";
+          width: 10px;
+          height: 10px;
+          border-radius: 999px;
+          margin-top: 0.3rem;
         }
 
         .status.info {
           background: #e0f2fe;
           color: #0369a1;
+          border: 1px solid rgba(56, 189, 248, 0.5);
+        }
+
+        .status.info::before {
+          background: #0ea5e9;
         }
 
         .status.error {
           background: #fee2e2;
           color: #b91c1c;
+          border: 1px solid rgba(248, 113, 113, 0.6);
+        }
+
+        .status.error::before {
+          background: #ef4444;
         }
 
         .status.success {
           background: #dcfce7;
           color: #166534;
+          border: 1px solid rgba(74, 222, 128, 0.7);
+        }
+
+        .status.success::before {
+          background: #22c55e;
         }
 
         .form {
@@ -329,6 +434,8 @@ export default function Login() {
         input:focus {
           outline: 2px solid rgba(37, 99, 235, 0.35);
           outline-offset: 2px;
+          border-color: rgba(37, 99, 235, 0.6);
+          box-shadow: 0 0 0 1px rgba(191, 219, 254, 0.9);
         }
 
         button {
@@ -340,7 +447,20 @@ export default function Login() {
           cursor: pointer;
           background: #1d4ed8;
           color: white;
-          transition: opacity 0.2s ease;
+          transition: opacity 0.2s ease, transform 0.1s ease, box-shadow 0.1s ease;
+          box-shadow: 0 10px 25px rgba(37, 99, 235, 0.25);
+        }
+
+        button:hover:not(:disabled) {
+          opacity: 0.95;
+          transform: translateY(-1px);
+          box-shadow: 0 14px 32px rgba(37, 99, 235, 0.35);
+        }
+
+        button:active:not(:disabled) {
+          opacity: 0.9;
+          transform: translateY(0);
+          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
         }
 
         button:disabled {
@@ -357,6 +477,7 @@ export default function Login() {
         .ghost-btn:hover:not(:disabled) {
           border-color: #1d4ed8;
           color: #1d4ed8;
+          background: rgba(191, 219, 254, 0.35);
         }
 
         .actions {
@@ -365,13 +486,66 @@ export default function Login() {
           flex-wrap: wrap;
         }
 
+        .actions button {
+          flex: 1 1 auto;
+        }
+
+        .trust-copy {
+          margin-top: 1.25rem;
+          font-size: 0.8rem;
+          color: #94a3b8;
+          line-height: 1.5;
+        }
+
+        .shell-footer {
+          margin-top: 1.75rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.75rem;
+          font-size: 0.75rem;
+          color: #64748b;
+        }
+
+        .footer-links {
+          display: flex;
+          gap: 0.9rem;
+          flex-wrap: wrap;
+        }
+
+        .footer-link {
+          color: inherit;
+          text-decoration: none;
+        }
+
+        .footer-link:hover {
+          text-decoration: underline;
+        }
+
         @media (max-width: 640px) {
           .shell.login {
-            padding: 2rem 1.5rem;
+            padding: 1.75rem 1.25rem;
           }
 
           .card {
-            padding: 1.25rem;
+            padding: 1.2rem;
+          }
+
+          .brand {
+            margin-bottom: 1.25rem;
+          }
+
+          .shell-footer {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .actions {
+            flex-direction: column;
+          }
+
+          .actions button {
+            width: 100%;
           }
         }
       `}</style>
