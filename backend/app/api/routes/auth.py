@@ -72,10 +72,18 @@ async def request_login_code(body: RequestCodeBody, db: Session = Depends(get_db
     - We look up the existing User created via webhook.
     - Generate a one-time code and send it via WhatsApp.
     """
+    logger.info(
+        "request_login_code received",
+        extra={"whatsapp_id": body.whatsapp_id},
+    )
     user: Optional[User] = (
         db.query(User).filter(User.whatsapp_id == body.whatsapp_id).first()
     )
     if not user:
+        logger.warning(
+            "Login requested for unknown whatsapp_id %s",
+            body.whatsapp_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found. Please send a message to the WhatsApp bot first.",
@@ -98,9 +106,17 @@ async def request_login_code(body: RequestCodeBody, db: Session = Depends(get_db
 
     message = f"Your login code for WA Expense Tracker is: {code}"
     if not enqueue_outbound_text(user.whatsapp_id, message):
+        logger.info(
+            "Sending login code directly via WhatsApp service for user %s",
+            user.id,
+        )
         await whatsapp_service.send_text_message(user.whatsapp_id, message)
 
-    logger.info("Login code generated for user %s", user.id)
+    logger.info(
+        "Login code generated for user %s",
+        user.id,
+        extra={"whatsapp_id": body.whatsapp_id},
+    )
     return {"status": "ok"}
 
 
@@ -109,10 +125,18 @@ async def verify_login_code(body: VerifyCodeBody, db: Session = Depends(get_db))
     """
     Verify the one-time code and return a JWT for the web dashboard.
     """
+    logger.info(
+        "verify_login_code received",
+        extra={"whatsapp_id": body.whatsapp_id},
+    )
     user: Optional[User] = (
         db.query(User).filter(User.whatsapp_id == body.whatsapp_id).first()
     )
     if not user:
+        logger.warning(
+            "verify_login_code: user not found for whatsapp_id %s",
+            body.whatsapp_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
         )
@@ -131,6 +155,10 @@ async def verify_login_code(body: VerifyCodeBody, db: Session = Depends(get_db))
     )
 
     if not token:
+        logger.warning(
+            "verify_login_code: invalid or expired code for user %s",
+            user.id,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired code.",
@@ -141,6 +169,7 @@ async def verify_login_code(body: VerifyCodeBody, db: Session = Depends(get_db))
 
     access_token = _create_jwt(str(user.id))
     refresh_token = _create_refresh_token(user.id, db)
+    logger.info("verify_login_code successful for user %s", user.id)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -154,6 +183,7 @@ class RefreshTokenBody(BaseModel):
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_tokens(body: RefreshTokenBody, db: Session = Depends(get_db)):
+    logger.info("refresh_tokens called")
     token_hash = _hash_refresh_token(body.refresh_token)
     now = datetime.now(timezone.utc)
     stored: Optional[RefreshToken] = (
@@ -167,13 +197,17 @@ async def refresh_tokens(body: RefreshTokenBody, db: Session = Depends(get_db)):
     )
 
     if not stored:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+        logger.warning("refresh_tokens: invalid or expired refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
+        )
 
     stored.revoked = True
     db.commit()
 
     access_token = _create_jwt(str(stored.user_id))
     refresh_token = _create_refresh_token(stored.user_id, db)
+    logger.info("refresh_tokens successful for user %s", stored.user_id)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -183,6 +217,7 @@ async def refresh_tokens(body: RefreshTokenBody, db: Session = Depends(get_db)):
 
 @router.post("/logout")
 async def logout(body: RefreshTokenBody, db: Session = Depends(get_db)):
+    logger.info("logout called")
     token_hash = _hash_refresh_token(body.refresh_token)
     stored: Optional[RefreshToken] = (
         db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
@@ -190,4 +225,7 @@ async def logout(body: RefreshTokenBody, db: Session = Depends(get_db)):
     if stored and not stored.revoked:
         stored.revoked = True
         db.commit()
+        logger.info("logout: refresh token revoked for user %s", stored.user_id)
+    else:
+        logger.info("logout: refresh token not found or already revoked")
     return {"status": "ok"}

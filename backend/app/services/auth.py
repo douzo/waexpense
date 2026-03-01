@@ -21,6 +21,7 @@ async def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     if creds is None:
+        logger.warning("get_current_user: no credentials provided")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
@@ -33,12 +34,14 @@ async def get_current_user(
         )
         raw_user_id = payload.get("sub")
     except jwt.PyJWTError:
+        logger.warning("get_current_user: token decode failed", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
 
     if not raw_user_id:
+        logger.warning("get_current_user: token missing 'sub' claim")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
@@ -47,6 +50,10 @@ async def get_current_user(
     try:
         user_id = uuid.UUID(str(raw_user_id))
     except (ValueError, AttributeError, TypeError):
+        logger.warning(
+            "get_current_user: invalid 'sub' claim format: %s",
+            raw_user_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
@@ -54,10 +61,12 @@ async def get_current_user(
 
     user: Optional[User] = db.query(User).filter(User.id == user_id).first()
     if not user:
+        logger.warning("get_current_user: user not found for id %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
 
+    logger.debug("get_current_user: authenticated user %s", user_id)
     return user
 

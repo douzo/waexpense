@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Step = "enter-wa" | "enter-code";
 type StatusTone = "info" | "error" | "success";
@@ -30,26 +30,50 @@ export default function Login() {
     []
   );
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // Basic diagnostic to confirm what API base the login page is using.
+      console.info("[login] Page mounted", { apiBase });
+    }
+  }, [apiBase]);
+
   async function handleRequestCode(e: FormEvent) {
     e.preventDefault();
     setStatus(null);
     setSubmitting(true);
     try {
+      console.info("[login] Requesting login code", {
+        apiBase,
+        whatsapp_id: waId,
+      });
       const res = await fetch(`${apiBase}/auth/request-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ whatsapp_id: waId }),
       });
+      console.info("[login] Request code response", {
+        ok: res.ok,
+        status: res.status,
+        statusText: res.statusText,
+        url: res.url,
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+          console.error("[login] Request code failed", {
+            status: res.status,
+            statusText: res.statusText,
+            detail: (data as any)?.detail,
+          });
         throw new Error(data.detail || "Failed to request code");
       }
       setStatus({
         tone: "success",
         message: "Code sent to your WhatsApp. Please check your messages.",
       });
+      console.info("[login] Login code requested successfully; moving to verify step");
       setStep("enter-code");
     } catch (err: any) {
+      console.error("[login] Request code threw", err);
       setStatus({ tone: "error", message: err.message || "Something went wrong" });
     } finally {
       setSubmitting(false);
@@ -61,22 +85,40 @@ export default function Login() {
     setStatus(null);
     setSubmitting(true);
     try {
+      console.info("[login] Verifying login code", {
+        apiBase,
+        whatsapp_id: waId,
+        codeLength: code?.length ?? 0,
+      });
       const res = await fetch(`${apiBase}/auth/verify-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ whatsapp_id: waId, code }),
       });
+      console.info("[login] Verify code response", {
+        ok: res.ok,
+        status: res.status,
+        statusText: res.statusText,
+        url: res.url,
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        console.error("[login] Verify code failed", {
+          status: res.status,
+          statusText: res.statusText,
+          detail: (data as any)?.detail,
+        });
         throw new Error(data.detail || "Invalid code");
       }
       const data = await res.json();
       if (typeof window !== "undefined") {
         localStorage.setItem("wa_token", data.access_token);
         localStorage.setItem("wa_refresh_token", data.refresh_token);
+        console.info("[login] Verify successful; tokens stored, redirecting to '/'");
         window.location.href = "/";
       }
     } catch (err: any) {
+      console.error("[login] Verify code threw", err);
       setStatus({ tone: "error", message: err.message || "Something went wrong" });
     } finally {
       setSubmitting(false);
