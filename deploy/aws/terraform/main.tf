@@ -299,16 +299,16 @@ locals {
   lambda_secrets = { for key, value in data.aws_ssm_parameter.lambda_secrets : key => value.value }
   base_env = merge(
     {
-      APP_NAME                  = var.app_name
-      DEBUG                     = tostring(var.debug)
-      DATABASE_URL              = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.address}:${aws_db_instance.this.port}/${var.db_name}"
-      WHATSAPP_PHONE_NUMBER_ID  = var.whatsapp_phone_number_id
-      EXTERNAL_TEXT_PARSER_URL  = var.external_text_parser_url
-      LOGIN_CODE_EXPIRY_MINUTES = tostring(var.login_code_expiry_minutes)
-      INBOUND_QUEUE_URL         = aws_sqs_queue.inbound.id
-      OUTBOUND_QUEUE_URL        = aws_sqs_queue.outbound.id
-      ENABLE_AUTO_SLEEP         = tostring(var.enable_auto_sleep)
-      IDLE_MINUTES_THRESHOLD    = tostring(var.idle_minutes_threshold)
+      APP_NAME                     = var.app_name
+      DEBUG                        = tostring(var.debug)
+      DATABASE_URL                 = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.address}:${aws_db_instance.this.port}/${var.db_name}"
+      WHATSAPP_PHONE_NUMBER_ID     = var.whatsapp_phone_number_id
+      EXTERNAL_TEXT_PARSER_URL     = var.external_text_parser_url
+      LOGIN_CODE_EXPIRY_MINUTES    = tostring(var.login_code_expiry_minutes)
+      INBOUND_QUEUE_URL            = aws_sqs_queue.inbound.id
+      OUTBOUND_QUEUE_URL           = aws_sqs_queue.outbound.id
+      ENABLE_AUTO_SLEEP            = tostring(var.enable_auto_sleep)
+      IDLE_MINUTES_THRESHOLD       = tostring(var.idle_minutes_threshold)
       ENV_STATE_SSM_PARAMETER_NAME = "/${var.project}/${var.environment}/env_state"
     },
     var.plain_env_overrides,
@@ -336,9 +336,9 @@ resource "aws_lambda_function" "backend_api" {
   environment {
     variables = merge(
       local.base_env,
-      {
+      var.enable_auto_sleep ? {
         ENV_MANAGER_FUNCTION_NAME = aws_lambda_function.env_manager.function_name
-      }
+      } : {}
     )
   }
 }
@@ -380,9 +380,9 @@ resource "aws_lambda_function" "webhook_ingest" {
   environment {
     variables = merge(
       local.base_env,
-      {
+      var.enable_auto_sleep ? {
         ENV_MANAGER_FUNCTION_NAME = aws_lambda_function.env_manager.function_name
-      }
+      } : {}
     )
   }
 }
@@ -578,6 +578,16 @@ resource "aws_lambda_permission" "webhook_api" {
 resource "aws_vpc_endpoint" "sqs" {
   vpc_id              = module.vpc.vpc_id
   service_name        = "com.amazonaws.${var.aws_region}.sqs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.vpc.private_subnets
+  private_dns_enabled = true
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+}
+
+resource "aws_vpc_endpoint" "lambda" {
+  count               = var.enable_auto_sleep ? 1 : 0
+  vpc_id              = module.vpc.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.lambda"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = module.vpc.private_subnets
   private_dns_enabled = true
